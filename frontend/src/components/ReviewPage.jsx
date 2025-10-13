@@ -69,8 +69,12 @@ const ReviewPage = () => {
         return;
       }
 
-      // Fetch reviews with user data
-      const { data: reviewsData, error: reviewsError } = await supabase
+      // Fetch reviews - try with join first, fallback to separate queries
+      let reviewsData = [];
+      let reviewsError = null;
+
+      // Try with join first
+      const { data: joinedReviewsData, error: joinedReviewsError } = await supabase
         .from('reviews')
         .select(`
           id,
@@ -84,26 +88,74 @@ const ReviewPage = () => {
         .eq('project_id', id)
         .order('created_at', { ascending: false });
 
-      if (reviewsError) {
-        console.error('Error fetching reviews:', reviewsError);
-        setErr('Failed to load reviews');
-        return;
+      if (joinedReviewsError) {
+        console.log('Join query failed, trying separate queries:', joinedReviewsError);
+        
+        // Fallback: fetch reviews without join
+        const { data: simpleReviewsData, error: simpleReviewsError } = await supabase
+          .from('reviews')
+          .select('*')
+          .eq('project_id', id)
+          .order('created_at', { ascending: false });
+
+        if (simpleReviewsError) {
+          console.error('Error fetching reviews:', simpleReviewsError);
+          setErr('Failed to load reviews');
+          return;
+        }
+
+        reviewsData = simpleReviewsData || [];
+        
+        // Fetch user data separately for each review
+        const userIds = [...new Set(reviewsData.map(r => r.user_id))];
+        const { data: usersData, error: usersError } = await supabase
+          .from('users')
+          .select('id, name, email')
+          .in('id', userIds);
+
+        if (usersError) {
+          console.error('Error fetching users:', usersError);
+          // Continue without user data
+        }
+
+        // Create a map of user data
+        const usersMap = {};
+        if (usersData) {
+          usersData.forEach(user => {
+            usersMap[user.id] = user;
+          });
+        }
+
+        // Format reviews with user data
+        reviewsData = reviewsData.map(review => ({
+          id: review.id,
+          projectId: review.project_id,
+          userId: review.user_id,
+          rating: review.rating,
+          comment: review.comment,
+          createdAt: review.created_at,
+          reviewerName: usersMap[review.user_id]?.name || "Anonymous",
+          reviewerEmail: usersMap[review.user_id]?.email || ""
+        }));
+      } else {
+        // Join query succeeded
+        reviewsData = joinedReviewsData || [];
+        
+        // Format reviews for frontend
+        reviewsData = reviewsData.map(review => ({
+          id: review.id,
+          projectId: review.project_id,
+          userId: review.user_id,
+          rating: review.rating,
+          comment: review.comment,
+          createdAt: review.created_at,
+          reviewerName: review.users?.name || "Anonymous",
+          reviewerEmail: review.users?.email || ""
+        }));
       }
 
-      // Format reviews for frontend
-      const formattedReviews = reviewsData.map(review => ({
-        id: review.id,
-        projectId: review.project_id,
-        userId: review.user_id,
-        rating: review.rating,
-        comment: review.comment,
-        createdAt: review.created_at,
-        reviewerName: review.users?.name || "Anonymous",
-        reviewerEmail: review.users?.email || ""
-      }));
-
       setProject(projectData);
-      setReviews(formattedReviews);
+      setReviews(reviewsData);
       setErr('');
 
     } catch (e) {
@@ -230,11 +282,11 @@ const ReviewPage = () => {
         <div className="bg-white rounded-2xl shadow p-6 mb-6">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">{project.title || project.projectName}</h1>
+              <h1 className="text-2xl font-bold text-gray-900">{project.project_name || project.title || project.projectName}</h1>
               {project.domain && <p className="text-sm text-gray-600 mt-1">Domain: {project.domain}</p>}
               {project.deadline && <p className="text-sm text-gray-600">Deadline: {new Date(project.deadline).toLocaleDateString()}</p>}
-              {(project.mentorName || project.mentorEmail) && (
-                <p className="text-sm text-gray-700 mt-1">Mentor: <span className="font-medium">{project.mentorName}</span> {project.mentorEmail && `(${project.mentorEmail})`}</p>
+              {(project.mentor?.name || project.mentor_email || project.mentorEmail) && (
+                <p className="text-sm text-gray-700 mt-1">Mentor: <span className="font-medium">{project.mentor?.name || project.mentor_email || project.mentorEmail}</span></p>
               )}
             </div>
             <div className="text-right">
@@ -246,7 +298,7 @@ const ReviewPage = () => {
               <p className="text-xs text-gray-500 mt-1">Avg Rating: {project.avgRating?.toFixed?.(2) || 0} ({project.ratingsCount || 0})</p>
             </div>
           </div>
-          {project.description && <p className="mt-4 text-gray-800">{project.description}</p>}
+          {(project.project_details || project.description) && <p className="mt-4 text-gray-800">{project.project_details || project.description}</p>}
 
           {Array.isArray(project.teamMembers) && project.teamMembers.length > 0 && (
             <div className="mt-5">
@@ -267,7 +319,7 @@ const ReviewPage = () => {
             {reviews.length === 0 ? (
               <p className="text-gray-600">No reviews yet. Be the first to review.</p>
             ) : (
-              reviews.map(r => <ReviewItem key={r._id} r={r} />)
+              reviews.map(r => <ReviewItem key={r.id} r={r} />)
             )}
           </div>
 

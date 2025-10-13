@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Storage Bucket</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+            font-size: 14px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .log {
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            padding: 10px;
+            margin: 10px 0;
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+        }
+        .success { color: green; }
+        .error { color: red; }
+        .info { color: blue; }
+        .warning { color: orange; }
+        .file-input {
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Storage Bucket Test</h1>
+        <p>This will test the submissions storage bucket and file upload/view functionality.</p>
+        
+        <button onclick="testBucketExists()">Check Bucket Exists</button>
+        <button onclick="testFileUpload()">Test File Upload</button>
+        <button onclick="testFileView()">Test File View</button>
+        <button onclick="listFiles()">List Files</button>
+        <button onclick="clearLog()">Clear Log</button>
+
+        <div class="file-input">
+            <input type="file" id="fileInput" accept=".pdf,.docx,.txt,.jpg,.png">
+            <button onclick="uploadSelectedFile()">Upload Selected File</button>
+        </div>
+
+        <div id="log" class="log"></div>
+    </div>
+
+    <script>
+        const supabaseUrl = 'https://lylifxrrvrhzwmiirxnm.supabase.co'
+        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx5bGlmeHJydnJoenhtaWlyeG5tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzUyNzQwNzcsImV4cCI6MjA1MDg1MDA3N30.8qWJjQwQzQwQzQwQzQwQzQwQzQwQzQwQzQwQzQ'
+        
+        const supabase = window.supabase.createClient(supabaseUrl, supabaseKey)
+        
+        function log(message, type = 'info') {
+            const logElement = document.getElementById('log')
+            const timestamp = new Date().toLocaleTimeString()
+            const className = type === 'error' ? 'error' : type === 'success' ? 'success' : type === 'warning' ? 'warning' : 'info'
+            logElement.innerHTML += `<span class="${className}">[${timestamp}] ${message}</span>\n`
+            logElement.scrollTop = logElement.scrollHeight
+        }
+        
+        function clearLog() {
+            document.getElementById('log').innerHTML = ''
+        }
+        
+        async function testBucketExists() {
+            log('🔍 Checking if submissions bucket exists...', 'info')
+            
+            try {
+                const { data: buckets, error } = await supabase.storage.listBuckets()
+                
+                if (error) {
+                    log(`❌ Error listing buckets: ${error.message}`, 'error')
+                    return
+                }
+                
+                const submissionsBucket = buckets.find(b => b.name === 'submissions')
+                if (submissionsBucket) {
+                    log('✅ Submissions bucket exists', 'success')
+                    log(`   • Name: ${submissionsBucket.name}`, 'info')
+                    log(`   • Public: ${submissionsBucket.public}`, 'info')
+                    log(`   • File size limit: ${submissionsBucket.file_size_limit} bytes`, 'info')
+                } else {
+                    log('❌ Submissions bucket does not exist', 'error')
+                    log('💡 Run CREATE_STORAGE_BUCKET.sql in Supabase SQL Editor', 'info')
+                }
+            } catch (err) {
+                log(`❌ Unexpected error: ${err.message}`, 'error')
+            }
+        }
+        
+        async function testFileUpload() {
+            log('📤 Testing file upload...', 'info')
+            
+            try {
+                // Create a test file
+                const testContent = 'This is a test file for upload testing'
+                const testFile = new File([testContent], 'test-upload.txt', { type: 'text/plain' })
+                
+                const { data, error } = await supabase.storage
+                    .from('submissions')
+                    .upload('test/test-upload.txt', testFile)
+                
+                if (error) {
+                    log(`❌ Upload failed: ${error.message}`, 'error')
+                    if (error.message.includes('not found')) {
+                        log('💡 Bucket does not exist - run CREATE_STORAGE_BUCKET.sql', 'warning')
+                    } else if (error.message.includes('row-level security')) {
+                        log('💡 RLS policies are blocking upload - check storage policies', 'warning')
+                    }
+                } else {
+                    log('✅ File upload succeeded', 'success')
+                    log(`   • Path: ${data.path}`, 'info')
+                    
+                    // Test getting public URL
+                    const { data: { publicUrl } } = supabase.storage
+                        .from('submissions')
+                        .getPublicUrl(data.path)
+                    
+                    log(`   • Public URL: ${publicUrl}`, 'info')
+                    
+                    // Clean up test file
+                    await supabase.storage
+                        .from('submissions')
+                        .remove([data.path])
+                    log('🧹 Test file cleaned up', 'info')
+                }
+            } catch (err) {
+                log(`❌ Unexpected error: ${err.message}`, 'error')
+            }
+        }
+        
+        async function testFileView() {
+            log('👁️ Testing file view functionality...', 'info')
+            
+            try {
+                // First upload a test file
+                const testContent = 'This is a test file for viewing'
+                const testFile = new File([testContent], 'view-test.txt', { type: 'text/plain' })
+                
+                const { data: uploadData, error: uploadError } = await supabase.storage
+                    .from('submissions')
+                    .upload('test/view-test.txt', testFile)
+                
+                if (uploadError) {
+                    log(`❌ Upload failed: ${uploadError.message}`, 'error')
+                    return
+                }
+                
+                log('✅ Test file uploaded', 'success')
+                
+                // Get public URL
+                const { data: { publicUrl } } = supabase.storage
+                    .from('submissions')
+                    .getPublicUrl(uploadData.path)
+                
+                log(`📄 Public URL: ${publicUrl}`, 'info')
+                
+                // Test opening the file
+                try {
+                    const response = await fetch(publicUrl)
+                    if (response.ok) {
+                        const content = await response.text()
+                        log('✅ File view test successful', 'success')
+                        log(`   • Content: ${content}`, 'info')
+                    } else {
+                        log(`❌ File view failed: ${response.status} ${response.statusText}`, 'error')
+                    }
+                } catch (fetchError) {
+                    log(`❌ File fetch failed: ${fetchError.message}`, 'error')
+                }
+                
+                // Clean up
+                await supabase.storage
+                    .from('submissions')
+                    .remove([uploadData.path])
+                log('🧹 Test file cleaned up', 'info')
+                
+            } catch (err) {
+                log(`❌ Unexpected error: ${err.message}`, 'error')
+            }
+        }
+        
+        async function listFiles() {
+            log('📋 Listing files in submissions bucket...', 'info')
+            
+            try {
+                const { data, error } = await supabase.storage
+                    .from('submissions')
+                    .list('', { limit: 100 })
+                
+                if (error) {
+                    log(`❌ Error listing files: ${error.message}`, 'error')
+                    return
+                }
+                
+                if (data && data.length > 0) {
+                    log(`📁 Found ${data.length} files:`, 'success')
+                    data.forEach(file => {
+                        log(`   • ${file.name} (${file.metadata?.size || 'unknown size'} bytes)`, 'info')
+                    })
+                } else {
+                    log('📁 No files found in bucket', 'info')
+                }
+            } catch (err) {
+                log(`❌ Unexpected error: ${err.message}`, 'error')
+            }
+        }
+        
+        async function uploadSelectedFile() {
+            const fileInput = document.getElementById('fileInput')
+            const file = fileInput.files[0]
+            
+            if (!file) {
+                log('❌ Please select a file first', 'error')
+                return
+            }
+            
+            log(`📤 Uploading ${file.name}...`, 'info')
+            
+            try {
+                const { data, error } = await supabase.storage
+                    .from('submissions')
+                    .upload(`test/${Date.now()}_${file.name}`, file)
+                
+                if (error) {
+                    log(`❌ Upload failed: ${error.message}`, 'error')
+                } else {
+                    log('✅ Upload successful', 'success')
+                    log(`   • Path: ${data.path}`, 'info')
+                    
+                    // Get public URL
+                    const { data: { publicUrl } } = supabase.storage
+                        .from('submissions')
+                        .getPublicUrl(data.path)
+                    
+                    log(`   • Public URL: ${publicUrl}`, 'info')
+                    log('💡 You can now test the view functionality in your app', 'info')
+                }
+            } catch (err) {
+                log(`❌ Unexpected error: ${err.message}`, 'error')
+            }
+        }
+        
+        // Auto-run on page load
+        window.onload = function() {
+            log('Storage Bucket Test Page Loaded', 'success')
+            log('Click "Check Bucket Exists" to start', 'info')
+        }
+    </script>
+</body>
+</html>

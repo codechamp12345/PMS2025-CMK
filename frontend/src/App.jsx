@@ -1,5 +1,6 @@
 import React from 'react';
 import { Route, BrowserRouter as Router, Routes } from 'react-router-dom';
+import { AuthProvider } from './contexts/AuthContext';
 import Banner from './components/Banner';
 import Footer from './components/Footer';
 import HODDashboard from './components/HODDashboard';
@@ -14,28 +15,79 @@ import ReviewPage from './components/ReviewPage';
 import ProjectDetails from './components/ProjectDetails';
 import About from './components/About';
 import Contact from './components/Contact';
-import SupabaseTest from './components/SupabaseTest';
+import AuthCallback from './components/AuthCallback';
+import RoleSelection from './components/RoleSelection';
+import EmailVerification from './components/EmailVerification';
+import ProtectedRoute from './components/ProtectedRoute';
+import DashboardRedirect from './components/DashboardRedirect';
 
 function App() {
   return (
-    <Router>
-      <Navbar />
-      <Routes>
-        <Route path="/" element={<><Banner /><Footer /></>} />
-        <Route path="/projects" element={<Projects />} />
-        <Route path="/projects/:id" element={<ProjectDetails />} />
-        <Route path="/projects/:id/review" element={<ReviewPage />} />
-        <Route path="/about" element={<About />} />
-        <Route path="/contact" element={<Contact />} />
-        <Route path="/signup" element={<Signup />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/mentee-dashboard" element={<MenteeDashboard />} />
-        <Route path="/mentor-dashboard" element={<MentorDashboard />} />
-        <Route path="/project-coordinator-dashboard" element={<ProjectCoordinatorDashboard />} />
-        <Route path="/hod-dashboard" element={<HODDashboard />} />
-        <Route path="/test-supabase" element={<SupabaseTest />} />
-      </Routes>
-    </Router>
+    <AuthProvider>
+      <Router>
+        <Navbar />
+        <Routes>
+          <Route path="/" element={<><Banner /><Footer /></>} />
+          <Route path="/projects" element={<Projects />} />
+          <Route path="/projects/:id" element={<ProjectDetails />} />
+          <Route path="/projects/:id/review" element={<ReviewPage />} />
+          <Route path="/about" element={<About />} />
+          <Route path="/contact" element={<Contact />} />
+          <Route path="/signup" element={<Signup />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/auth/callback" element={<AuthCallback />} />
+          <Route path="/select-role" element={<RoleSelection />} />
+          <Route path="/verify-email" element={<EmailVerification />} />
+
+          {/* Role-based dashboard routes */}
+          <Route path="/components/dashboard/mentee" element={
+            <ProtectedRoute requiredRole="mentee">
+              <MenteeDashboard />
+            </ProtectedRoute>
+          } />
+          <Route path="/components/dashboard/mentor" element={
+            <ProtectedRoute requiredRole="mentor">
+              <MentorDashboard />
+            </ProtectedRoute>
+          } />
+          <Route path="/components/dashboard/hod" element={
+            <ProtectedRoute requiredRole="hod">
+              <HODDashboard />
+            </ProtectedRoute>
+          } />
+          <Route path="/components/dashboard/coordinator" element={
+            <ProtectedRoute requiredRole="project_coordinator">
+              <ProjectCoordinatorDashboard />
+            </ProtectedRoute>
+          } />
+
+          {/* Legacy routes for backward compatibility */}
+          <Route path="/mentee-dashboard" element={
+            <ProtectedRoute requiredRole="mentee">
+              <MenteeDashboard />
+            </ProtectedRoute>
+          } />
+          <Route path="/mentor-dashboard" element={
+            <ProtectedRoute requiredRole="mentor">
+              <MentorDashboard />
+            </ProtectedRoute>
+          } />
+          <Route path="/hod-dashboard" element={
+            <ProtectedRoute requiredRole="hod">
+              <HODDashboard />
+            </ProtectedRoute>
+          } />
+          <Route path="/project-coordinator-dashboard" element={
+            <ProtectedRoute requiredRole="project_coordinator">
+              <ProjectCoordinatorDashboard />
+            </ProtectedRoute>
+          } />
+
+          {/* Dashboard redirect for authenticated users */}
+          <Route path="/dashboard" element={<DashboardRedirect />} />
+        </Routes>
+      </Router>
+    </AuthProvider>
   );
 }
 

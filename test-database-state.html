@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Database State Test</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+            font-size: 14px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .log {
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            padding: 10px;
+            margin: 10px 0;
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+        }
+        .success { color: green; }
+        .error { color: red; }
+        .info { color: blue; }
+        .warning { color: orange; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Database State Test</h1>
+        <p>This will test the current state of your database and help identify why uploads are failing.</p>
+        
+        <button onclick="testDatabaseState()">Test Database State</button>
+        <button onclick="testUpload()">Test File Upload</button>
+        <button onclick="clearLog()">Clear Log</button>
+
+        <div id="log" class="log"></div>
+    </div>
+
+    <script>
+        const supabaseUrl = 'https://lylifxrrvrhzwmiirxnm.supabase.co'
+        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx5bGlmeHJydnJoenhtaWlyeG5tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzUyNzQwNzcsImV4cCI6MjA1MDg1MDA3N30.8qWJjQwQzQwQzQwQzQwQzQwQzQwQzQwQzQwQzQ'
+        
+        const supabase = window.supabase.createClient(supabaseUrl, supabaseKey)
+        
+        function log(message, type = 'info') {
+            const logElement = document.getElementById('log')
+            const timestamp = new Date().toLocaleTimeString()
+            const className = type === 'error' ? 'error' : type === 'success' ? 'success' : type === 'warning' ? 'warning' : 'info'
+            logElement.innerHTML += `<span class="${className}">[${timestamp}] ${message}</span>\n`
+            logElement.scrollTop = logElement.scrollHeight
+        }
+        
+        function clearLog() {
+            document.getElementById('log').innerHTML = ''
+        }
+        
+        async function testDatabaseState() {
+            log('🔍 Testing database state...', 'info')
+            
+            try {
+                // Test 1: Check if user is authenticated
+                const { data: { user }, error: userError } = await supabase.auth.getUser()
+                if (userError) {
+                    log(`❌ Auth error: ${userError.message}`, 'error')
+                    return
+                }
+                if (!user) {
+                    log('❌ No authenticated user found', 'error')
+                    log('💡 Please log in to your application first', 'info')
+                    return
+                }
+                log(`✅ User authenticated: ${user.email}`, 'success')
+                
+                // Test 2: Check if submissions table exists
+                const { data: submissionsData, error: submissionsError } = await supabase
+                    .from('submissions')
+                    .select('id')
+                    .limit(1)
+                
+                if (submissionsError) {
+                    if (submissionsError.code === 'PGRST116') {
+                        log('❌ Submissions table does not exist', 'error')
+                        log('💡 Run FIX_RLS_FINAL.sql in Supabase SQL Editor', 'info')
+                    } else {
+                        log(`❌ Submissions table error: ${submissionsError.message}`, 'error')
+                    }
+                } else {
+                    log('✅ Submissions table exists', 'success')
+                }
+                
+                // Test 3: Check if project_files table exists
+                const { data: projectFilesData, error: projectFilesError } = await supabase
+                    .from('project_files')
+                    .select('id')
+                    .limit(1)
+                
+                if (projectFilesError) {
+                    if (projectFilesError.code === 'PGRST116') {
+                        log('❌ Project_files table does not exist', 'error')
+                        log('💡 Run FIX_RLS_FINAL.sql in Supabase SQL Editor', 'info')
+                    } else {
+                        log(`❌ Project_files table error: ${projectFilesError.message}`, 'error')
+                    }
+                } else {
+                    log('✅ Project_files table exists', 'success')
+                }
+                
+                // Test 4: Check storage bucket
+                const { data: buckets, error: bucketsError } = await supabase.storage.listBuckets()
+                if (bucketsError) {
+                    log(`❌ Storage error: ${bucketsError.message}`, 'error')
+                } else {
+                    const submissionsBucket = buckets.find(b => b.name === 'submissions')
+                    if (submissionsBucket) {
+                        log('✅ Submissions storage bucket exists', 'success')
+                    } else {
+                        log('❌ Submissions storage bucket does not exist', 'error')
+                        log('💡 Run FIX_STORAGE_POLICIES.sql or create bucket manually', 'info')
+                    }
+                }
+                
+                // Test 5: Try to insert a test record
+                log('🧪 Testing database insert...', 'info')
+                const testProjectId = '00000000-0000-0000-0000-000000000000'
+                const { error: insertError } = await supabase
+                    .from('submissions')
+                    .insert({
+                        project_id: testProjectId,
+                        mentee_id: user.id,
+                        stage_key: 'test_upload',
+                        filename: 'test.txt',
+                        file_url: 'https://example.com/test.txt',
+                        storage_path: 'test/test.txt',
+                        status: 'pending'
+                    })
+                
+                if (insertError) {
+                    log(`❌ Database insert failed: ${insertError.message}`, 'error')
+                    if (insertError.message.includes('row-level security')) {
+                        log('💡 RLS policies are blocking the insert', 'warning')
+                        log('💡 Run FIX_RLS_FINAL.sql in Supabase SQL Editor', 'info')
+                    }
+                } else {
+                    log('✅ Database insert succeeded', 'success')
+                    // Clean up test record
+                    await supabase
+                        .from('submissions')
+                        .delete()
+                        .eq('stage_key', 'test_upload')
+                }
+                
+            } catch (err) {
+                log(`❌ Unexpected error: ${err.message}`, 'error')
+            }
+        }
+        
+        async function testUpload() {
+            log('📤 Testing file upload...', 'info')
+            
+            try {
+                // Create a test file
+                const testContent = 'This is a test file for upload testing'
+                const testFile = new File([testContent], 'test-upload.txt', { type: 'text/plain' })
+                
+                const { error: uploadError } = await supabase.storage
+                    .from('submissions')
+                    .upload('test/test-upload.txt', testFile)
+                
+                if (uploadError) {
+                    log(`❌ Upload failed: ${uploadError.message}`, 'error')
+                    if (uploadError.message.includes('row-level security')) {
+                        log('💡 Storage RLS policies are blocking the upload', 'warning')
+                        log('💡 Run FIX_STORAGE_POLICIES.sql in Supabase SQL Editor', 'info')
+                    } else if (uploadError.message.includes('not found')) {
+                        log('💡 Storage bucket does not exist', 'warning')
+                        log('💡 Create the submissions bucket manually in Supabase Dashboard', 'info')
+                    }
+                } else {
+                    log('✅ File upload succeeded', 'success')
+                    // Clean up test file
+                    await supabase.storage
+                        .from('submissions')
+                        .remove(['test/test-upload.txt'])
+                }
+                
+            } catch (err) {
+                log(`❌ Unexpected error: ${err.message}`, 'error')
+            }
+        }
+        
+        // Auto-run on page load
+        window.onload = function() {
+            log('Database State Test Page Loaded', 'success')
+            log('Click "Test Database State" to diagnose the issue', 'info')
+        }
+    </script>
+</body>
+</html>

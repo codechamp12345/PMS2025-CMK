@@ -1,469 +1,407 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
 
-function AddProjectForm({ mentors, mentees, onProjectCreated, onCancel }) {
+function AddProjectForm({ onProjectCreated, onCancel }) {
+  const { user, userProfile, isAuthenticated } = useAuth();
   const [formData, setFormData] = useState({
     title: '',
     domain: '',
     description: '',
-    deadline: '',
-    githubRepo: '',
     mentorName: '',
     mentorEmail: '',
-    teamMembers: []
+    deadline: '',
+    githubRepo: '',
+    teamMembers: [],
   });
-  const [availableMentees, setAvailableMentees] = useState([]);
+
   const [message, setMessage] = useState({ type: '', text: '' });
 
-  // Fetch available mentees for team member selection
-  useEffect(() => {
-    const fetchAvailableMentees = async () => {
-      try {
-        console.log('Fetching available mentees...');
-
-        const { data: menteesData, error: menteesError } = await supabase
-          .from('users')
-          .select('id, name, email')
-          .eq('role', 'mentee');
-
-        if (menteesError) {
-          console.error('Error fetching available mentees:', menteesError);
-          setMessage({ type: 'error', text: 'Failed to load available mentees. Please refresh the page.' });
-        } else {
-          setAvailableMentees(menteesData || []);
-          console.log('Available mentees loaded:', menteesData?.length || 0);
-        }
-      } catch (error) {
-        console.error('Error fetching available mentees:', error);
-        setMessage({ type: 'error', text: 'Failed to load available mentees. Please refresh the page.' });
-      }
-    };
-    fetchAvailableMentees();
-  }, []);
-
+  // Input handler
   const handleInputChange = (field, value) => {
     setFormData(prev => ({
       ...prev,
-      [field]: value.trim()
+      [field]: value,
     }));
   };
 
   const handleAddTeamMember = () => {
     setFormData(prev => ({
       ...prev,
-      teamMembers: [...prev.teamMembers, { name: '', email: '', role: 'Developer', userId: '' }]
+      teamMembers: [...prev.teamMembers, { name: '', email: '', role: 'Developer' }],
     }));
   };
 
   const handleTeamMemberChange = (index, field, value) => {
-    const updatedMembers = [...formData.teamMembers];
-
-    if (field === 'email' && availableMentees.length > 0) {
-      // Find the mentee by email and set userId
-      const selectedMentee = availableMentees.find(mentee => mentee.email === value);
-      if (selectedMentee) {
-        updatedMembers[index] = {
-          ...updatedMembers[index],
-          email: value,
-          userId: selectedMentee.id,
-          name: selectedMentee.name
-        };
-      } else {
-        updatedMembers[index] = {
-          ...updatedMembers[index],
-          email: value,
-          userId: '',
-          name: ''
-        };
-      }
-    } else {
-      updatedMembers[index] = {
-        ...updatedMembers[index],
-        [field]: value
-      };
-    }
-
-    setFormData(prev => ({
-      ...prev,
-      teamMembers: updatedMembers
-    }));
+    const updated = [...formData.teamMembers];
+    updated[index][field] = value;
+    setFormData(prev => ({ ...prev, teamMembers: updated }));
   };
 
   const handleRemoveTeamMember = (index) => {
-    const updatedMembers = formData.teamMembers.filter((_, i) => i !== index);
     setFormData(prev => ({
       ...prev,
-      teamMembers: updatedMembers
+      teamMembers: prev.teamMembers.filter((_, i) => i !== index),
     }));
   };
 
   const handleSubmit = async () => {
-    // Validation
-    if (!formData.title || !formData.domain || !formData.githubRepo || !formData.mentorName || !formData.mentorEmail) {
-      setMessage({ type: 'error', text: 'Please fill in all required fields (Title, Domain, GitHub Repo, Mentor Name, Mentor Email)' });
+    // Check authentication first
+    if (!isAuthenticated || !user) {
+      setMessage({ type: 'error', text: 'User not authenticated. Please log in first.' });
       return;
     }
 
-    // Validate email format for mentor
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.mentorEmail.trim())) {
-      setMessage({ type: 'error', text: 'Please enter a valid mentor email address' });
+    if (!formData.title || !formData.domain || !formData.mentorName || !formData.mentorEmail) {
+      setMessage({ type: 'error', text: 'Please fill all required fields (Title, Domain, Mentor Name, Mentor Email).' });
       return;
     }
 
-    // Validate GitHub URL format
-    const githubUrlPattern = /^https:\/\/github\.com\/[^\/]+\/[^\/]+$/;
-    if (!githubUrlPattern.test(formData.githubRepo.trim())) {
-      setMessage({ type: 'error', text: 'Please enter a valid GitHub repository URL (format: https://github.com/username/repository)' });
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(formData.mentorEmail)) {
+      setMessage({ type: 'error', text: 'Please enter a valid mentor email address.' });
       return;
-    }
-
-    // Validate team members - if any team member has partial data, it's invalid
-    for (const member of formData.teamMembers) {
-      if (member.name || member.email || member.role) {
-        if (!member.name || !member.email) {
-          setMessage({ type: 'error', text: 'Team members must have both name and email filled in' });
-          return;
-        }
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(member.email)) {
-          setMessage({ type: 'error', text: `Invalid email format for team member: ${member.email}` });
-          return;
-        }
-      }
     }
 
     setMessage({ type: 'info', text: 'Creating project...' });
 
     try {
-      // Get current user (in a real app, this would come from authentication)
-      const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
-
-      // Validate mentor exists and is a mentor
-      const { data: mentorData, error: mentorError } = await supabase
+      // Check if mentor exists, if not create a mentor user
+      let mentorData;
+      const { data: existingMentor, error: mentorError } = await supabase
         .from('users')
-        .select('id, name, email, role')
-        .eq('email', formData.mentorEmail.trim().toLowerCase())
-        .eq('role', 'mentor')
+        .select('id, email, name, role')
+        .eq('email', formData.mentorEmail.trim())
         .single();
 
-      if (mentorError || !mentorData) {
-        setMessage({ type: 'error', text: 'Invalid mentor email or mentor not found' });
-        return;
-      }
+      if (mentorError && mentorError.code === 'PGRST116') {
+        // Mentor doesn't exist, create new mentor user
+        const { data: newMentor, error: createError } = await supabase
+          .from('users')
+          .insert({
+            name: formData.mentorName.trim(),
+            email: formData.mentorEmail.trim(),
+            role: 'mentor',
+            isVerified: true
+          })
+          .select()
+          .single();
 
-      // Validate team members exist in mentees table
-      const validatedTeamMembers = [];
-      if (formData.teamMembers.length > 0) {
-        for (const member of formData.teamMembers) {
-          if (member.email) {
-            const { data: menteeData, error: menteeError } = await supabase
-              .from('users')
-              .select('id, name, email, role')
-              .eq('id', member.userId)
-              .eq('role', 'mentee')
-              .single();
-
-            if (menteeError || !menteeData) {
-              setMessage({ type: 'error', text: `Team member not found: ${member.email}` });
-              return;
-            }
-
-            validatedTeamMembers.push({
-              userId: menteeData.id,
-              name: menteeData.name,
-              email: menteeData.email,
-              role: member.role || 'Developer'
-            });
-          }
+        if (createError) {
+          setMessage({ type: 'error', text: 'Failed to create mentor. Please try again.' });
+          return;
         }
+        mentorData = newMentor;
+      } else if (mentorError) {
+        setMessage({ type: 'error', text: 'Error checking mentor. Please try again.' });
+        return;
+      } else {
+        mentorData = existingMentor;
       }
 
-      // Create project in Supabase
-      const projectData = {
+      // Prepare project data
+      const projectPayload = {
         title: formData.title.trim(),
         domain: formData.domain.trim(),
         description: formData.description.trim(),
-        deadline: formData.deadline ? new Date(formData.deadline).toISOString() : null,
-        githubRepo: formData.githubRepo.trim(),
-        mentorName: formData.mentorName.trim(),
-        mentorEmail: formData.mentorEmail.trim().toLowerCase(),
-        createdBy: currentUser.userId || null,
-        status: 'draft',
-        avgRating: 0,
-        ratingsCount: 0,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        deadline: formData.deadline || null,
+        github_repo: formData.githubRepo.trim() || null,
+        mentor_id: mentorData.id,
+        mentor_email: mentorData.email,
+        created_by: user.id,
+        status: 'active',
+        created_at: new Date().toISOString(),
       };
 
-      const { data: project, error: insertError } = await supabase
-        .from('projects')
-        .insert([projectData])
-        .select();
+      console.log('Creating project with data:', projectPayload);
 
-      if (insertError) {
-        console.error('Supabase project insert error:', insertError);
-        setMessage({ type: 'error', text: 'Server error while creating project' });
-        return;
+      const { data: projectData, error: projectError } = await supabase
+        .from('projects')
+        .insert([projectPayload])
+        .select(`
+          *,
+          creator:created_by (
+            name,
+            email
+          ),
+          mentor:mentor_id (
+            name,
+            email
+          )
+        `)
+        .single();
+
+      if (projectError) {
+        console.error('Project creation error:', projectError);
+        // Provide more user-friendly error message
+        if (projectError.code === '23505') {
+          throw new Error('A project with these details already exists.');
+        } else if (projectError.code === '42501') {
+          throw new Error('You do not have permission to create projects.');
+        } else {
+          throw projectError;
+        }
+      }
+      
+      if (!projectData) {
+        throw new Error('Failed to create project. Please try again.');
       }
 
-      // Insert team members into project_team_members table
-      if (validatedTeamMembers.length > 0) {
-        const teamMemberInserts = validatedTeamMembers.map(member => ({
-          project_id: project[0].id,
-          user_id: member.userId,
-          role: member.role,
-          created_at: new Date().toISOString()
-        }));
+      console.log('Project created successfully:', projectData);
 
-        const { error: teamError } = await supabase
-          .from('project_team_members')
-          .insert(teamMemberInserts);
-
-        if (teamError) {
-          console.error('Error inserting team members:', teamError);
-          // Don't fail the project creation if team members fail, just log it
+      // Process team members if any
+      if (formData.teamMembers.length > 0) {
+        console.log('Processing team members:', formData.teamMembers);
+        const errors = [];
+        
+        // Process team members one by one to handle errors individually
+        for (const member of formData.teamMembers) {
+          if (!member.email || !member.name) {
+            console.warn('Skipping team member: missing email or name');
+            continue;
+          }
+          
+          try {
+            // 1. Check if user exists
+            const { data: existingUser } = await supabase
+              .from('users')
+              .select('id')
+              .eq('email', member.email.trim())
+              .single();
+              
+            let userId = existingUser?.id;
+            
+            // 2. If user doesn't exist, create them
+            if (!userId) {
+              console.log(`Creating new user for team member: ${member.email}`);
+              const { data: newUser, error: createError } = await supabase
+                .from('users')
+                .insert({
+                  name: member.name.trim(),
+                  email: member.email.trim(),
+                  role: 'mentee',
+                  is_verified: true
+                })
+                .select('id')
+                .single();
+                
+              if (createError) throw createError;
+              userId = newUser.id;
+            }
+            
+            // 3. Add user to project_team_members
+            const { error: teamError } = await supabase
+              .from('project_team_members')
+              .insert({
+                project_id: projectData.id,
+                user_id: userId,
+                email: member.email.trim(),
+                role_in_project: member.role || 'member'
+              });
+              
+            if (teamError) throw teamError;
+            
+            console.log(`Added team member: ${member.email} (${member.role})`);
+            
+          } catch (error) {
+            console.error(`Error adding team member ${member.email}:`, error);
+            errors.push(`Failed to add ${member.email}: ${error.message}`);
+          }
+        }
+        
+        // Show warning if any team members couldn't be added
+        if (errors.length > 0) {
+          setMessage({
+            type: 'warning',
+            text: `Project created, but some team members couldn't be added: ${errors.join('; ')}`
+          });
         }
       }
 
-      console.log('Project created successfully:', project);
+      setMessage({ type: 'success', text: '✅ Project created successfully!' });
+      if (onProjectCreated) onProjectCreated();
 
-      setMessage({ type: 'success', text: 'Project created successfully!' });
-      // Reset form after a short delay to show success message
       setTimeout(() => {
         setFormData({
           title: '',
           domain: '',
           description: '',
-          deadline: '',
-          githubRepo: '',
           mentorName: '',
           mentorEmail: '',
-          teamMembers: []
+          deadline: '',
+          githubRepo: '',
+          teamMembers: [],
         });
-        if (onProjectCreated) {
-          onProjectCreated();
-        }
-      }, 1500);
-
+      }, 1000);
     } catch (error) {
-      console.error('Error creating project:', error);
-      setMessage({
-        type: 'error',
-        text: 'Failed to create project. Please try again.'
-      });
+      console.error('Project creation failed:', error);
+      const errorMessage = error.message || 'Failed to create project. Please try again.';
+      setMessage({ type: 'error', text: `Error: ${errorMessage}` });
     }
   };
 
   return (
-    <div className="bg-gray-700 p-6 rounded-lg shadow-md max-w-2xl mx-auto">
+    <div className="bg-gray-800 p-6 rounded-lg shadow-md max-w-2xl mx-auto">
       <h2 className="text-2xl font-bold text-white mb-6">Create New Project</h2>
 
       {message.text && (
-        <div className={`mb-4 p-3 rounded ${message.type === 'error' ? 'bg-red-500' : message.type === 'info' ? 'bg-blue-500' : 'bg-green-500'} text-white`}>
+        <div
+          className={`mb-4 p-3 rounded text-white ${
+            message.type === 'error'
+              ? 'bg-red-500'
+              : message.type === 'info'
+              ? 'bg-blue-500'
+              : 'bg-green-500'
+          }`}
+        >
           {message.text}
         </div>
       )}
 
-      <div className="space-y-4">
-        {/* Project Title - Required */}
-        <div>
-          <label className="block text-white mb-2">Project Title *</label>
-          <input
-            type="text"
-            placeholder="Enter project title"
-            value={formData.title}
-            onChange={(e) => handleInputChange('title', e.target.value)}
-            className="w-full p-3 rounded-md bg-gray-600 text-white border border-gray-500 focus:border-blue-500 focus:outline-none"
-            required
-          />
-        </div>
+      {/* Project Title */}
+      <label className="block text-white mb-2">Title *</label>
+      <input
+        type="text"
+        value={formData.title}
+        onChange={(e) => handleInputChange('title', e.target.value)}
+        className="w-full p-3 mb-4 rounded-md bg-gray-700 text-white"
+        placeholder="Project title"
+      />
 
-        {/* Domain - Required */}
-        <div>
-          <label className="block text-white mb-2">Domain *</label>
-          <select
-            value={formData.domain}
-            onChange={(e) => handleInputChange('domain', e.target.value)}
-            className="w-full p-3 rounded-md bg-gray-600 text-white border border-gray-500 focus:border-blue-500 focus:outline-none"
-            required
+      {/* Domain */}
+      <label className="block text-white mb-2">Domain *</label>
+      <select
+        value={formData.domain}
+        onChange={(e) => handleInputChange('domain', e.target.value)}
+        className="w-full p-3 mb-4 rounded-md bg-gray-700 text-white"
+      >
+        <option value="">Select Domain</option>
+        <option value="Web Development">Web Development</option>
+        <option value="AI">Artificial Intelligence</option>
+        <option value="ML">Machine Learning</option>
+        <option value="Mobile App">Mobile App</option>
+        <option value="Cloud">Cloud Computing</option>
+        <option value="Other">Other</option>
+      </select>
+
+      {/* Description */}
+      <label className="block text-white mb-2">Description</label>
+      <textarea
+        value={formData.description}
+        onChange={(e) => handleInputChange('description', e.target.value)}
+        className="w-full p-3 mb-4 rounded-md bg-gray-700 text-white"
+        placeholder="Project description"
+        rows="3"
+      />
+
+      {/* Deadline */}
+      <label className="block text-white mb-2">Project Deadline</label>
+      <input
+        type="date"
+        value={formData.deadline}
+        onChange={(e) => handleInputChange('deadline', e.target.value)}
+        className="w-full p-3 mb-4 rounded-md bg-gray-700 text-white"
+      />
+
+      {/* GitHub Repository */}
+      <label className="block text-white mb-2">GitHub Repository (Optional)</label>
+      <input
+        type="url"
+        value={formData.githubRepo}
+        onChange={(e) => handleInputChange('githubRepo', e.target.value)}
+        className="w-full p-3 mb-4 rounded-md bg-gray-700 text-white"
+        placeholder="https://github.com/username/repository"
+      />
+
+      {/* Mentor Name */}
+      <label className="block text-white mb-2">Mentor Name *</label>
+      <input
+        type="text"
+        value={formData.mentorName}
+        onChange={(e) => handleInputChange('mentorName', e.target.value)}
+        className="w-full p-3 mb-4 rounded-md bg-gray-700 text-white"
+        placeholder="Enter mentor's full name"
+      />
+
+      {/* Mentor Email */}
+      <label className="block text-white mb-2">Mentor Email *</label>
+      <input
+        type="email"
+        value={formData.mentorEmail}
+        onChange={(e) => handleInputChange('mentorEmail', e.target.value)}
+        className="w-full p-3 mb-4 rounded-md bg-gray-700 text-white"
+        placeholder="mentor@example.com"
+      />
+
+      {/* Team Members */}
+      <div className="mb-4">
+        <div className="flex justify-between items-center mb-2">
+          <label className="text-white">Team Members</label>
+          <button
+            onClick={handleAddTeamMember}
+            type="button"
+            className="bg-green-600 px-3 py-1 rounded-md text-white"
           >
-            <option value="">Select Domain</option>
-            <option value="Web Development">Web Development</option>
-            <option value="Mobile Development">Mobile Development</option>
-            <option value="Data Science">Data Science</option>
-            <option value="Machine Learning">Machine Learning</option>
-            <option value="AI">Artificial Intelligence</option>
-            <option value="IoT">Internet of Things</option>
-            <option value="Blockchain">Blockchain</option>
-            <option value="Cybersecurity">Cybersecurity</option>
-            <option value="Cloud Computing">Cloud Computing</option>
-            <option value="DevOps">DevOps</option>
-            <option value="Other">Other</option>
-          </select>
+            + Add
+          </button>
         </div>
 
-        {/* Description - Optional */}
-        <div>
-          <label className="block text-white mb-2">Description</label>
-          <textarea
-            placeholder="Enter project description"
-            value={formData.description}
-            onChange={(e) => handleInputChange('description', e.target.value)}
-            className="w-full p-3 rounded-md bg-gray-600 text-white border border-gray-500 focus:border-blue-500 focus:outline-none h-24 resize-none"
-            rows={3}
-          />
-        </div>
-
-        {/* Deadline - Optional */}
-        <div>
-          <label className="block text-white mb-2">Deadline</label>
-          <input
-            type="date"
-            value={formData.deadline}
-            onChange={(e) => handleInputChange('deadline', e.target.value)}
-            className="w-full p-3 rounded-md bg-gray-600 text-white border border-gray-500 focus:border-blue-500 focus:outline-none"
-          />
-        </div>
-
-        {/* GitHub Repo - Required */}
-        <div className="bg-gray-600 p-4 rounded-lg border-2 border-orange-500">
-          <label className="block text-white mb-2 font-bold text-lg">
-            🔗 GitHub Repository *
-            <span className="text-red-400 ml-1">(Required)</span>
-          </label>
-          <input
-            type="url"
-            placeholder="https://github.com/username/repository"
-            value={formData.githubRepo}
-            onChange={(e) => handleInputChange('githubRepo', e.target.value)}
-            className="w-full p-3 rounded-md bg-gray-500 text-white border-2 border-gray-400 focus:border-orange-500 focus:outline-none text-lg"
-            required
-          />
-          <p className="text-gray-300 text-sm mt-2">
-            ⚠️ This field is mandatory. Please provide a valid GitHub repository URL.
-          </p>
-        </div>
-
-        {/* Mentor Selection */}
-        <div className="bg-gray-600 p-4 rounded-lg border-2 border-orange-500">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-white mb-2 font-bold text-lg">
-                👨‍🏫 Mentor Name *
-                <span className="text-red-400 ml-1">(Required)</span>
-              </label>
-              <input
-                type="text"
-                placeholder="Enter mentor name"
-                value={formData.mentorName}
-                onChange={(e) => handleInputChange('mentorName', e.target.value)}
-                className="w-full p-3 rounded-md bg-gray-500 text-white border-2 border-gray-400 focus:border-orange-500 focus:outline-none text-lg"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-white mb-2 font-bold text-lg">
-                📧 Mentor Email *
-                <span className="text-red-400 ml-1">(Required)</span>
-              </label>
-              <input
-                type="email"
-                placeholder="mentor@example.com"
-                value={formData.mentorEmail}
-                onChange={(e) => handleInputChange('mentorEmail', e.target.value)}
-                className="w-full p-3 rounded-md bg-gray-500 text-white border-2 border-gray-400 focus:border-orange-500 focus:outline-none text-lg"
-                required
-              />
-            </div>
-          </div>
-          <p className="text-gray-300 text-sm mt-2">
-            ⚠️ Both mentor name and email are mandatory fields.
-          </p>
-        </div>
-
-        {/* Team Members Section */}
-        <div>
-          <div className="flex justify-between items-center mb-3">
-            <label className="block text-white">Team Members</label>
+        {formData.teamMembers.map((member, i) => (
+          <div key={i} className="flex gap-2 mb-2">
+            <input
+              type="text"
+              value={member.name}
+              onChange={(e) => handleTeamMemberChange(i, 'name', e.target.value)}
+              className="flex-1 p-2 rounded bg-gray-700 text-white"
+              placeholder="Team member name"
+            />
+            <input
+              type="email"
+              value={member.email}
+              onChange={(e) => handleTeamMemberChange(i, 'email', e.target.value)}
+              className="flex-1 p-2 rounded bg-gray-700 text-white"
+              placeholder="member@example.com"
+            />
+            <select
+              value={member.role}
+              onChange={(e) => handleTeamMemberChange(i, 'role', e.target.value)}
+              className="p-2 rounded bg-gray-700 text-white"
+            >
+              <option value="Leader">Leader</option>
+              <option value="Developer">Developer</option>
+              <option value="Designer">Designer</option>
+              <option value="Tester">Tester</option>
+            </select>
             <button
               type="button"
-              onClick={handleAddTeamMember}
-              className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded-md text-sm"
+              onClick={() => handleRemoveTeamMember(i)}
+              className="bg-red-600 px-3 text-white rounded"
             >
-              + Add Team Member
+              ✕
             </button>
           </div>
+        ))}
+      </div>
 
-          {formData.teamMembers.length === 0 ? (
-            <p className="text-gray-400 text-sm italic">No team members added yet</p>
-          ) : (
-            <div className="space-y-3">
-              {formData.teamMembers.map((member, index) => (
-                <div key={index} className="bg-gray-600 p-3 rounded-md">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    <div>
-                      <label className="block text-white mb-1 text-sm">Team Member</label>
-                      <select
-                        value={member.email || ''}
-                        onChange={(e) => handleTeamMemberChange(index, 'email', e.target.value)}
-                        className="w-full p-2 rounded bg-gray-500 text-white border border-gray-400 focus:border-blue-500 focus:outline-none"
-                      >
-                        <option value="">Select Mentee</option>
-                        {availableMentees.map(mentee => (
-                          <option key={mentee.id} value={mentee.email}>
-                            {mentee.name} - {mentee.email}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-white mb-1 text-sm">Role</label>
-                      <select
-                        value={member.role}
-                        onChange={(e) => handleTeamMemberChange(index, 'role', e.target.value)}
-                        className="w-full p-2 rounded bg-gray-500 text-white border border-gray-400 focus:border-blue-500 focus:outline-none"
-                      >
-                        <option value="Leader">Leader</option>
-                        <option value="Developer">Developer</option>
-                        <option value="Designer">Designer</option>
-                        <option value="Tester">Tester</option>
-                        <option value="Analyst">Analyst</option>
-                      </select>
-                    </div>
-                    <div className="flex items-end">
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveTeamMember(index)}
-                        className="w-full px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Submit and Cancel Buttons */}
-        <div className="flex justify-end gap-3 pt-4 border-t">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="px-6 py-3 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition duration-200"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSubmit}
-            className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-semibold transition duration-200"
-          >
-            Create Project
-          </button>
-        </div>
+      {/* Submit */}
+      <div className="flex justify-end gap-3">
+        <button
+          onClick={onCancel}
+          className="bg-gray-600 px-5 py-2 text-white rounded-md"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={handleSubmit}
+          className="bg-blue-600 px-5 py-2 text-white rounded-md"
+        >
+          Create Project
+        </button>
       </div>
     </div>
   );
 }
 
 export default AddProjectForm;
+

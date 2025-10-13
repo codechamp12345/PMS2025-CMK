@@ -1,79 +1,127 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 
 function Signup() {
-  const [name, setName] = useState(''); // Added name state
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState('mentor');
+  const [role, setRole] = useState('mentee');
   const [emailError, setEmailError] = useState('');
   const [passwordError, setPasswordError] = useState('');
   const [serverMessage, setServerMessage] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const navigate = useNavigate();
+  const { signUp, signIn, signInWithGoogle, validateEmailDomain } = useAuth();
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+    setLoading(true);
+    setEmailError('');
+    setPasswordError('');
+    setServerMessage('');
 
-    // Validate email
-    if (!validateEmail(email)) {
-      setEmailError('Please enter a valid email address.');
+    // Validate email domain
+    if (!validateEmailDomain(email)) {
+      setEmailError('Only @git-india.edu.in email addresses are allowed.');
+      setLoading(false);
       return;
     }
 
-    // Validate password (still keep for frontend validation, but won't send to backend)
+    // Validate password
     if (password.length < 6) {
       setPasswordError('Password should be at least 6 characters long.');
+      setLoading(false);
+      return;
+    }
+
+    // Validate name
+    if (!name.trim()) {
+      setServerMessage('Name is required.');
+      setLoading(false);
       return;
     }
 
     try {
-      const normalizedEmail = email.toLowerCase();
+      const { data, error, message } = await signUp(email.toLowerCase().trim(), password, {
+        name: name.trim(),
+        role: role
+      });
 
-      // Check if user already exists
-      const { data: existingUser, error: existingUserError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('email', normalizedEmail)
-        .single();
-
-      if (existingUserError && existingUserError.code !== 'PGRST116') {
-        console.error('Supabase existing user check error:', existingUserError);
-        setServerMessage('Internal server error. Please try again.');
+      if (error) {
+        setServerMessage(error.message);
         return;
       }
 
-      if (existingUser) {
-        setServerMessage('User already exists. Please try logging in instead.');
-        return;
+      if (data?.user) {
+        // For development, skip email verification and login directly
+        if (import.meta.env.DEV) {
+          setServerMessage('Account created successfully! Logging you in...');
+          
+          // Clear form
+          setName('');
+          setEmail('');
+          setPassword('');
+          setRole('mentee');
+          
+          // Auto-login after successful signup in development
+          try {
+            const { data: loginData, error: loginError } = await signIn(email.toLowerCase().trim(), password);
+            if (loginError) {
+              console.log('Auto-login failed:', loginError.message);
+              setServerMessage('Account created but login failed. Please try logging in manually.');
+            } else {
+              setServerMessage('Account created and logged in successfully!');
+            }
+          } catch (err) {
+            console.log('Auto-login error:', err.message);
+            setServerMessage('Account created but login failed. Please try logging in manually.');
+          }
+        } else {
+          // Production: Show verification message
+          const verificationMessage = message || 'Account created successfully! Please check your email and click the verification link to complete registration.';
+          setServerMessage(verificationMessage);
+          
+          // Clear form
+          setName('');
+          setEmail('');
+          setPassword('');
+          setRole('mentee');
+          
+          // Redirect to verification page after 3 seconds
+          setTimeout(() => {
+            navigate('/verify-email');
+          }, 3000);
+        }
       }
-
-      // Create new user in Supabase
-      const { data: newUser, error: insertError } = await supabase
-        .from('users')
-        .insert([{
-          name,
-          email: normalizedEmail,
-          role,
-          isVerified: false,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        }]);
-
-      if (insertError) {
-        console.error('Supabase signup error:', insertError);
-        setServerMessage('Internal server error. Please try again.');
-        return;
-      }
-
-      setServerMessage('User registered successfully!');
-      setName('');
-      setEmail('');
-      setPassword('');
-      setRole('mentor');
 
     } catch (error) {
       console.error('Signup error:', error);
       setServerMessage('Error: Unable to register user');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleSignUp = async () => {
+    setGoogleLoading(true);
+    setServerMessage('');
+
+    try {
+      const { data, error } = await signInWithGoogle();
+
+      if (error) {
+        setServerMessage(error.message);
+        return;
+      }
+
+      // Google OAuth will redirect, so we don't need to handle navigation here
+    } catch (error) {
+      console.error('Google sign-up error:', error);
+      setServerMessage('Failed to sign up with Google. Please try again.');
+    } finally {
+      setGoogleLoading(false);
     }
   };
 
@@ -90,7 +138,7 @@ function Signup() {
         <form onSubmit={handleSubmit}>
           <div className="mb-4">
             <label htmlFor="name" className="block text-sm font-medium">
-              Name
+              Name *
             </label>
             <input
               id="name"
@@ -99,49 +147,56 @@ function Signup() {
               value={name}
               onChange={(e) => setName(e.target.value)}
               className="w-full px-3 py-2 border rounded-md outline-none"
+              required
             />
           </div>
 
           <div className="mb-4">
             <label htmlFor="email" className="block text-sm font-medium">
-              Email
+              Email *
             </label>
             <input
               id="email"
               type="email"
-              placeholder="Enter your Email"
+              placeholder="Enter your @git-india.edu.in email"
               value={email}
               onChange={(e) => {
                 setEmail(e.target.value);
                 setEmailError('');
               }}
               className="w-full px-3 py-2 border rounded-md outline-none"
+              required
             />
+            <p className="text-xs text-gray-500 mt-1">
+              {import.meta.env.DEV ? (
+                <>Only @git-india.edu.in emails are allowed<br/>
+                <span className="text-blue-600">Development: Test emails also accepted</span></>
+              ) : (
+                'Only @git-india.edu.in emails are allowed'
+              )}
+            </p>
             {emailError && <p className="text-red-500 text-sm">{emailError}</p>}
           </div>
 
           <div className="mb-4">
             <label htmlFor="password" className="block text-sm font-medium">
-              Password (Not stored in database for this setup)
+              Password *
             </label>
             <input
               id="password"
               type="password"
-              placeholder="Enter your Password"
+              placeholder="Enter your Password (min 6 characters)"
               value={password}
               onChange={(e) => {
                 setPassword(e.target.value);
                 setPasswordError('');
               }}
               className="w-full px-3 py-2 border rounded-md outline-none"
+              required
             />
             {passwordError && (
               <p className="text-red-500 text-sm">{passwordError}</p>
             )}
-            <p className="text-sm text-yellow-600">
-              Warning: Password is not stored in the database with the current schema.
-              Consider using Supabase Authentication for secure password handling.
-            </p>
           </div>
 
           <div className="mb-4">
@@ -164,14 +219,35 @@ function Signup() {
           <div className="mb-4">
             <button
               type="submit"
-              className="w-full py-2 px-4 text-white bg-pink-500 rounded-md"
+              disabled={loading}
+              className="w-full py-2 px-4 text-white bg-pink-500 rounded-md disabled:bg-gray-400 disabled:cursor-not-allowed"
             >
-              Sign Up
+              {loading ? 'Creating Account...' : 'Sign Up'}
+            </button>
+          </div>
+
+          <div className='mb-4'>
+            <div className='text-center text-gray-500 mb-2'>or</div>
+            <button 
+              type="button"
+              onClick={handleGoogleSignUp}
+              disabled={googleLoading}
+              className='w-full py-2 px-4 text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:bg-gray-100 disabled:cursor-not-allowed flex items-center justify-center'
+            >
+              <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+              </svg>
+              {googleLoading ? 'Signing up...' : 'Sign up with Google'}
             </button>
           </div>
 
           {serverMessage && (
-            <p className="text-center text-green-500">{serverMessage}</p>
+            <p className={`text-center text-sm ${serverMessage.includes('successfully') ? 'text-green-500' : 'text-red-500'}`}>
+              {serverMessage}
+            </p>
           )}
 
           <p className="text-sm text-center">

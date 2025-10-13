@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Quick Storage Test</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <h1>Quick Storage Test</h1>
+    <button onclick="testStorage()">Test Storage</button>
+    <div id="result"></div>
+
+    <script>
+        const supabaseUrl = 'https://lylifxrrvrhzwmiirxnm.supabase.co'
+        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx5bGlmeHJydnJoenhtaWlyeG5tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzUyNzQwNzcsImV4cCI6MjA1MDg1MDA3N30.8qWJjQwQzQwQzQwQzQwQzQwQzQwQzQwQzQwQzQ'
+        
+        const supabase = window.supabase.createClient(supabaseUrl, supabaseKey)
+        
+        async function testStorage() {
+            const result = document.getElementById('result')
+            result.innerHTML = 'Testing...'
+            
+            try {
+                // Test 1: List buckets
+                console.log('Testing bucket access...')
+                const { data: buckets, error: bucketError } = await supabase.storage.listBuckets()
+                
+                if (bucketError) {
+                    result.innerHTML = `❌ Bucket error: ${bucketError.message}`
+                    return
+                }
+                
+                console.log('Available buckets:', buckets)
+                
+                // Check if submissions bucket exists
+                const submissionsBucket = buckets.find(b => b.name === 'submissions')
+                if (!submissionsBucket) {
+                    result.innerHTML = `
+                        ❌ Submissions bucket not found<br>
+                        Available buckets: ${buckets.map(b => b.name).join(', ')}<br>
+                        <strong>You need to create the 'submissions' bucket manually in Supabase Dashboard → Storage</strong>
+                    `
+                    return
+                }
+                
+                // Test 2: Try to upload a test file
+                console.log('Testing file upload...')
+                const testFile = new File(['test content'], 'test.txt', { type: 'text/plain' })
+                const testPath = `test-${Date.now()}/test.txt`
+                
+                const { data: uploadData, error: uploadError } = await supabase.storage
+                    .from('submissions')
+                    .upload(testPath, testFile)
+                
+                if (uploadError) {
+                    result.innerHTML = `❌ Upload error: ${uploadError.message}`
+                    return
+                }
+                
+                // Test 3: Try to get public URL
+                const { data: { publicUrl } } = supabase.storage
+                    .from('submissions')
+                    .getPublicUrl(testPath)
+                
+                // Clean up test file
+                await supabase.storage.from('submissions').remove([testPath])
+                
+                result.innerHTML = `
+                    ✅ Storage is working!<br>
+                    📁 Bucket: ${submissionsBucket.name} (${submissionsBucket.public ? 'public' : 'private'})<br>
+                    📤 Upload test: SUCCESS<br>
+                    🔗 URL generation: SUCCESS<br>
+                    <strong>The storage bucket is properly configured!</strong>
+                `
+                
+            } catch (err) {
+                result.innerHTML = `❌ Unexpected error: ${err.message}`
+                console.error('Storage test error:', err)
+            }
+        }
+    </script>
+</body>
+</html>

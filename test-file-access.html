@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test File Access</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <h1>Test File Access</h1>
+    <button onclick="testFileAccess()">Test File Access</button>
+    <div id="result"></div>
+
+    <script>
+        const supabaseUrl = 'https://lylifxrrvrhzwmiirxnm.supabase.co'
+        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx5bGlmeHJydnJoenhtaWlyeG5tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzUyNzQwNzcsImV4cCI6MjA1MDg1MDA3N30.8qWJjQwQzQwQzQwQzQwQzQwQzQwQzQwQzQwQzQ'
+        
+        const supabase = window.supabase.createClient(supabaseUrl, supabaseKey)
+        
+        async function testFileAccess() {
+            const result = document.getElementById('result')
+            result.innerHTML = 'Testing file access...'
+            
+            try {
+                // Test 1: Check if submissions bucket exists
+                const { data: buckets, error: bucketError } = await supabase.storage.listBuckets()
+                
+                if (bucketError) {
+                    result.innerHTML = `❌ Bucket error: ${bucketError.message}`
+                    return
+                }
+                
+                const submissionsBucket = buckets.find(b => b.name === 'submissions')
+                if (!submissionsBucket) {
+                    result.innerHTML = '❌ Submissions bucket not found. Create it in Supabase Dashboard → Storage'
+                    return
+                }
+                
+                // Test 2: Try to list files in submissions bucket
+                const { data: files, error: listError } = await supabase.storage
+                    .from('submissions')
+                    .list('', { limit: 10 })
+                
+                if (listError) {
+                    result.innerHTML = `❌ List files error: ${listError.message}`
+                    return
+                }
+                
+                // Test 3: Try to upload a test file
+                const testFile = new File(['Test content'], 'test.txt', { type: 'text/plain' })
+                const testPath = `test-${Date.now()}/test.txt`
+                
+                const { data: uploadData, error: uploadError } = await supabase.storage
+                    .from('submissions')
+                    .upload(testPath, testFile)
+                
+                if (uploadError) {
+                    result.innerHTML = `❌ Upload error: ${uploadError.message}`
+                    return
+                }
+                
+                // Test 4: Try to get a signed URL
+                const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+                    .from('submissions')
+                    .createSignedUrl(testPath, 3600)
+                
+                if (signedUrlError) {
+                    result.innerHTML = `❌ Signed URL error: ${signedUrlError.message}`
+                    return
+                }
+                
+                // Test 5: Try to open the signed URL
+                const testWindow = window.open(signedUrlData.signedUrl, '_blank')
+                if (testWindow) {
+                    testWindow.close()
+                }
+                
+                // Clean up test file
+                await supabase.storage.from('submissions').remove([testPath])
+                
+                result.innerHTML = `
+                    ✅ File access is working!<br>
+                    📁 Bucket: ${submissionsBucket.name} (${submissionsBucket.public ? 'public' : 'private'})<br>
+                    📂 Files in bucket: ${files.length}<br>
+                    📤 Upload test: SUCCESS<br>
+                    🔗 Signed URL test: SUCCESS<br>
+                    <strong>View and Download buttons should work now!</strong>
+                `
+                
+            } catch (err) {
+                result.innerHTML = `❌ Unexpected error: ${err.message}`
+                console.error('File access test error:', err)
+            }
+        }
+    </script>
+</body>
+</html>

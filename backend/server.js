@@ -102,11 +102,11 @@ function startServer() {
   try {
     // Initialize Supabase client
     const { createClient } = await import('@supabase/supabase-js');
-    const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
-    const SUPABASE_KEY = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+    const SUPABASE_URL = process.env.SUPABASE_URL;
+    const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY;
 
     if (!SUPABASE_URL || !SUPABASE_KEY) {
-      console.error("❌ Supabase URL or ANON KEY missing. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.");
+      console.error("❌ Supabase URL or ANON KEY missing. Set SUPABASE_URL and SUPABASE_ANON_KEY in .env file.");
       process.exit(1);
     }
 

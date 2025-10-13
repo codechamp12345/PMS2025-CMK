@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
 import AddProjectForm from './AddProjectForm';
 
 const Badge = ({ children }) => (
@@ -77,6 +78,7 @@ const SkeletonCard = () => (
 );
 
 const Projects = () => {
+  const { user, userProfile } = useAuth();
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -95,7 +97,6 @@ const Projects = () => {
   // Fetch mentors and mentees for the form
   const [mentors, setMentors] = useState([]);
   const [mentees, setMentees] = useState([]);
-  const [currentUser, setCurrentUser] = useState(null);
 
   useEffect(() => {
     const fetchUsers = async () => {
@@ -128,10 +129,6 @@ const Projects = () => {
       }
     };
 
-    // Get current user for role-based access
-    const user = JSON.parse(localStorage.getItem('currentUser') || '{}');
-    setCurrentUser(user);
-
     fetchUsers();
   }, []);
 
@@ -151,25 +148,67 @@ const Projects = () => {
 
       console.log('Fetching projects from Supabase...');
 
-      // Role-based project fetching
-      let query = supabase.from('projects').select('*');
+      // First try a simple query to see if the table exists and is accessible
+      let { data: projectsData, error: projectsError } = await supabase
+        .from('projects')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(100);
 
-      if (currentUser?.role === 'mentor' && currentUser?.email) {
-        // For mentors, fetch only their projects
-        query = query.eq('mentorEmail', currentUser.email);
+      // If that fails, try without order clause
+      if (projectsError) {
+        console.log('Ordered query failed, trying without order:', projectsError);
+        const result = await supabase.from('projects').select('*').limit(100);
+        projectsData = result.data;
+        projectsError = result.error;
       }
-      // For mentees and unauthenticated users, show all projects
 
-      const { data: projectsData, error: projectsError } = await query;
+      // If still failing, try with different column name
+      if (projectsError) {
+        console.log('Standard query failed, trying with different column:', projectsError);
+        const result = await supabase.from('projects').select('*').order('createdAt', { ascending: false }).limit(100);
+        projectsData = result.data;
+        projectsError = result.error;
+      }
 
       if (projectsError) {
         console.error('Supabase fetch projects error:', projectsError);
-        setError('Failed to fetch projects from database');
+        console.error('Error details:', {
+          message: projectsError.message,
+          details: projectsError.details,
+          hint: projectsError.hint,
+          code: projectsError.code
+        });
+        setError(`Failed to fetch projects: ${projectsError.message}`);
         return;
       }
 
       console.log('Projects response:', projectsData);
-      setProjects(projectsData || []);
+      
+      // Apply role-based filtering on the client side if needed
+      let filteredProjects = projectsData || [];
+      
+      if (user && userProfile) {
+        if (userProfile.role === 'mentee') {
+          // For mentees, show only projects assigned to them
+          filteredProjects = filteredProjects.filter(p => 
+            p.mentees && p.mentees.includes(user.id)
+          );
+        } else if (userProfile.role === 'mentor') {
+          // For mentors, show only projects assigned to them
+          filteredProjects = filteredProjects.filter(p => 
+            p.mentor_id === user.id || p.mentor_email === user.email
+          );
+        } else if (userProfile.role === 'project_coordinator') {
+          // For coordinators, show only projects they assigned
+          filteredProjects = filteredProjects.filter(p => 
+            p.assigned_by === user.id
+          );
+        }
+        // For HOD, show all projects (no filter)
+      }
+
+      setProjects(filteredProjects);
 
     } catch (e) {
       console.error('Unexpected error in fetchProjects:', e);
@@ -181,7 +220,7 @@ const Projects = () => {
 
   useEffect(() => {
     fetchProjects();
-  }, []);
+  }, [user, userProfile]);
 
   // Debounced server-side search fallback when query is at least 2 chars
   useEffect(() => {
@@ -200,11 +239,22 @@ const Projects = () => {
       try {
         console.log(`Searching for: "${q}"`);
 
-        // Search in Supabase
-        const { data: searchResults, error: searchError } = await supabase
+        // Search in Supabase - try different column names
+        let { data: searchResults, error: searchError } = await supabase
           .from('projects')
           .select('*')
-          .or(`title.ilike.%${q}%,domain.ilike.%${q}%,description.ilike.%${q}%,githubRepo.ilike.%${q}%`);
+          .or(`project_name.ilike.%${q}%,domain.ilike.%${q}%,project_details.ilike.%${q}%`);
+
+        // If that fails, try with title and description columns
+        if (searchError) {
+          console.log('Search with project_name failed, trying with title:', searchError);
+          const result = await supabase
+            .from('projects')
+            .select('*')
+            .or(`title.ilike.%${q}%,domain.ilike.%${q}%,description.ilike.%${q}%`);
+          searchResults = result.data;
+          searchError = result.error;
+        }
 
         if (searchError) {
           console.error('Search error:', searchError);
@@ -231,9 +281,9 @@ const Projects = () => {
     const q = query.trim().toLowerCase();
     if (!q) return projects;
     return projects.filter(p => {
-      const title = (p.title || p.projectName || '').toLowerCase();
+      const title = (p.project_name || p.title || p.projectName || '').toLowerCase();
       const domain = (p.domain || '').toLowerCase();
-      const description = (p.description || '').toLowerCase();
+      const description = (p.project_details || p.description || '').toLowerCase();
       const githubRepo = (p.githubRepo || '').toLowerCase();
       return title.includes(q) || domain.includes(q) || description.includes(q) || githubRepo.includes(q);
     });
@@ -280,16 +330,16 @@ const Projects = () => {
             <div>
               <h2 className="text-2xl font-semibold text-gray-900 mb-2">
                 Projects
-                {currentUser?.role && (
+                {userProfile?.role && (
                   <span className="ml-2 text-sm font-normal text-gray-500">
-                    ({currentUser.role === 'mentor' ? 'Mentor View' : currentUser.role === 'hod' ? 'Admin View' : 'General View'})
+                    ({userProfile.role === 'mentor' ? 'Mentor View' : userProfile.role === 'hod' ? 'Admin View' : 'General View'})
                   </span>
                 )}
               </h2>
               <p className="text-gray-600">
-                {currentUser?.role === 'mentor'
+                {userProfile?.role === 'mentor'
                   ? 'Projects you are mentoring'
-                  : currentUser?.role === 'hod'
+                  : userProfile?.role === 'hod'
                   ? 'All projects with mentor and mentee details'
                   : 'Search, browse, and create projects for review'
                 }
@@ -307,14 +357,14 @@ const Projects = () => {
                 />
               </div>
               {/* Show create button for authenticated users who can create projects */}
-              {currentUser?.userId && (
+              {user?.id && (
                 <>
-                  {currentUser.role === 'mentee' && (
+                  {userProfile?.role === 'mentee' && (
                     <button onClick={openModal} className="btn-primary">
                       + Create Project
                     </button>
                   )}
-                  {currentUser.role === 'hod' && (
+                  {userProfile?.role === 'hod' && (
                     <button onClick={openModal} className="btn-secondary">
                       + Create Project (Admin)
                     </button>
@@ -322,7 +372,7 @@ const Projects = () => {
                 </>
               )}
               {/* Show login prompt for non-authenticated users */}
-              {!currentUser?.userId && (
+              {!user?.id && (
                 <div className="px-6 py-3 rounded-xl bg-gradient-to-r from-gray-100 to-gray-200 text-gray-600 font-medium">
                   Login to Create Project
                 </div>
@@ -362,9 +412,9 @@ const Projects = () => {
           >
             <div className="text-6xl mb-4">🚀</div>
             <p className="text-xl text-gray-600 font-medium">
-              {currentUser?.role === 'mentor'
+              {userProfile?.role === 'mentor'
                 ? 'No projects assigned to you yet.'
-                : currentUser?.role === 'hod'
+                : userProfile?.role === 'hod'
                 ? 'No projects found.'
                 : 'No projects found. Try a different search or create one.'}
             </p>
@@ -385,13 +435,13 @@ const Projects = () => {
                   <div className="project-card-header">
                     <div className="flex items-start justify-between gap-3 mb-3">
                       <h3 className="text-xl font-bold text-white leading-tight flex-1">
-                        {p.title || p.projectName}
+                        {p.project_name || p.title || p.projectName}
                       </h3>
                       {p.domain && <Badge>{p.domain}</Badge>}
                     </div>
-                    {p.description && (
+                    {(p.project_details || p.description) && (
                       <p className="text-white/90 text-sm line-clamp-2 opacity-90">
-                        {p.description}
+                        {p.project_details || p.description}
                       </p>
                     )}
                   </div>
@@ -422,23 +472,23 @@ const Projects = () => {
                             <p className="font-medium text-gray-900">{new Date(p.deadline).toLocaleDateString()}</p>
                           </div>
                         )}
-                        {p.createdAt && (
+                        {p.created_at && (
                           <div>
                             <span className="text-gray-500">Created:</span>
-                            <p className="font-medium text-gray-900">{new Date(p.createdAt).toLocaleDateString()}</p>
+                            <p className="font-medium text-gray-900">{new Date(p.created_at).toLocaleDateString()}</p>
                           </div>
                         )}
                       </div>
 
-                      {(p.mentorName || p.mentorEmail) && (
+                      {(p.mentor?.name || p.mentor?.email || p.mentor_email) && (
                         <div>
                           <span className="text-gray-500 text-sm">Mentor:</span>
-                          <p className="font-medium text-gray-900">{p.mentorName || p.mentorEmail}</p>
+                          <p className="font-medium text-gray-900">{p.mentor?.name || p.mentor?.email || p.mentor_email}</p>
                         </div>
                       )}
 
                       {/* HOD view shows additional details */}
-                      {currentUser?.role === 'hod' && p.mentee && (
+                      {userProfile?.role === 'hod' && p.mentee && (
                         <div>
                           <span className="text-gray-500 text-sm">Mentee:</span>
                           <p className="font-medium text-gray-900">{p.mentee.name}</p>
