@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { FaPlus, FaUsers, FaProjectDiagram, FaExclamationTriangle, FaCheckCircle, FaTrash } from 'react-icons/fa';
+import { FaPlus, FaUsers, FaProjectDiagram, FaExclamationTriangle, FaCheckCircle, FaTrash, FaFileCsv } from 'react-icons/fa';
+import CSVImport from './CSVImport';
 
 const ProjectCoordinatorDashboard = () => {
   const [user, setUser] = useState(null);
@@ -10,6 +11,7 @@ const ProjectCoordinatorDashboard = () => {
   const [projects, setProjects] = useState([]);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
+  const [showCSVImport, setShowCSVImport] = useState(false);
 
   // Form state
   const [projectName, setProjectName] = useState('');
@@ -333,6 +335,24 @@ const ProjectCoordinatorDashboard = () => {
     }
   };
 
+  const handleCSVImportComplete = async (importResults) => {
+    try {
+      // Refresh projects list
+      await fetchProjects(userProfile.id);
+      
+      // Show success message
+      if (importResults.success > 0) {
+        setSuccess(`Successfully imported ${importResults.success} projects from CSV!`);
+        setShowCSVImport(false);
+      }
+      
+      // Clear success message after 5 seconds
+      setTimeout(() => setSuccess(null), 5000);
+    } catch (error) {
+      console.error('Error refreshing after CSV import:', error);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -364,12 +384,20 @@ const ProjectCoordinatorDashboard = () => {
               <h1 className="text-3xl font-bold text-gray-900">Project Coordinator Dashboard</h1>
               <p className="text-gray-600">Welcome back, {userProfile.name}</p>
             </div>
-            <button
-              onClick={() => supabase.auth.signOut()}
-              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
-            >
-              Logout
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setShowCSVImport(!showCSVImport)}
+                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+              >
+                <FaFileCsv /> {showCSVImport ? 'Hide CSV Import' : 'Import CSV'}
+              </button>
+              <button
+                onClick={() => supabase.auth.signOut()}
+                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+              >
+                Logout
+              </button>
+            </div>
           </div>
         </div>
       </header>
@@ -420,6 +448,16 @@ const ProjectCoordinatorDashboard = () => {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* CSV Import Section */}
+        {showCSVImport && (
+          <div className="mb-8">
+            <CSVImport 
+              onImportComplete={handleCSVImportComplete}
+              coordinatorId={userProfile?.id}
+            />
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Assignment Form */}
           <div className="bg-white rounded-lg shadow-sm border p-6">

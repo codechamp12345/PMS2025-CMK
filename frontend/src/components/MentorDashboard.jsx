@@ -32,6 +32,23 @@ const statusOptions = [
   { value: 'pending', label: 'Pending', icon: '⏳', color: 'text-gray-600' }
 ];
 
+const formatDate = (dateString) => {
+  if (!dateString) return 'N/A';
+  try {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  } catch (error) {
+    console.error('Error formatting date:', error);
+    return 'Invalid Date';
+  }
+};
+
 const MentorDashboard = () => {
   const navigate = useNavigate();
   const [checkingAuth, setCheckingAuth] = useState(true);
@@ -438,6 +455,138 @@ const MentorDashboard = () => {
   const handleLogout = async () => {
     await supabase.auth.signOut();
     navigate('/login');
+  };
+
+  const fetchAllProjectDeliverables = async (projects) => {
+    if (!projects || projects.length === 0) {
+      setProjectDeliverables({});
+      return;
+    }
+
+    try {
+      const projectIds = projects.map(project => project.id).filter(Boolean);
+      
+      // First try with join
+      let { data, error } = await supabase
+        .from('submissions')
+        .select(`
+          id,
+          project_id,
+          user_id,
+          stage,
+          filename,
+          file_url,
+          status,
+          uploaded_at,
+          remark,
+          users!inner(id, name, email)
+        `)
+        .in('project_id', projectIds)
+        .order('uploaded_at', { ascending: false });
+
+      // If join fails, try without join and fetch users separately
+      if (error) {
+        console.warn('Join query failed, trying fallback:', error);
+        
+        const { data: submissionsData, error: submissionsError } = await supabase
+          .from('submissions')
+          .select(`
+            id,
+            project_id,
+            user_id,
+            stage,
+            filename,
+            file_url,
+            status,
+            uploaded_at,
+            remark
+          `)
+          .in('project_id', projectIds)
+          .order('uploaded_at', { ascending: false });
+
+        if (submissionsError) {
+          console.error('Error fetching deliverables:', submissionsError);
+          return;
+        }
+
+        // Fetch users separately
+        const userIds = Array.from(new Set((submissionsData || []).map(s => s.user_id).filter(Boolean)));
+        let userMap = {};
+        
+        if (userIds.length > 0) {
+          const { data: usersData, error: usersError } = await supabase
+            .from('users')
+            .select('id, name, email')
+            .in('id', userIds);
+
+          if (!usersError && usersData) {
+            userMap = usersData.reduce((acc, user) => {
+              acc[user.id] = user;
+              return acc;
+            }, {});
+          }
+        }
+
+        // Combine submissions with user data
+        data = (submissionsData || []).map(submission => ({
+          ...submission,
+          users: userMap[submission.user_id] || { id: submission.user_id, name: 'Unknown', email: '' }
+        }));
+      }
+
+      if (!data) {
+        console.error('No data received from deliverables query');
+        return;
+      }
+
+      // Group deliverables by project_id
+      const deliverablesByProject = {};
+      (data || []).forEach(deliverable => {
+        if (!deliverablesByProject[deliverable.project_id]) {
+          deliverablesByProject[deliverable.project_id] = [];
+        }
+        deliverablesByProject[deliverable.project_id].push(deliverable);
+      });
+
+      setProjectDeliverables(deliverablesByProject);
+    } catch (error) {
+      console.error('Error fetching project deliverables:', error);
+    }
+  };
+
+  const setupProjectFilesSubscription = (projectIds) => {
+    if (!projectIds || projectIds.length === 0) {
+      return;
+    }
+
+    // Clean up existing subscription
+    if (projectFileChannelRef.current) {
+      supabase.removeChannel(projectFileChannelRef.current);
+    }
+
+    // Create new subscription
+    const channel = supabase
+      .channel('project_files_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'project_files',
+          filter: `mentor_id=eq.${mentor?.id}`
+        },
+        (payload) => {
+          console.log('Project files change received:', payload);
+          
+          // Refresh project files for the affected project
+          if (payload.new?.project_id) {
+            fetchProjectFiles([payload.new.project_id]);
+          }
+        }
+      )
+      .subscribe();
+
+    projectFileChannelRef.current = channel;
   };
 
   if (checkingAuth) {
