@@ -735,7 +735,29 @@ const MentorDashboard = () => {
                           <td className="px-6 py-4">
                             <div className="flex flex-wrap gap-2">
                               <button
-                                onClick={() => submission && window.open(submission.file_url, '_blank')}
+                                onClick={async () => {
+                                  if (!submission) return;
+                                  try {
+                                    // If it's a direct URL, open it directly
+                                    if (submission.file_url.startsWith('http')) {
+                                      window.open(submission.file_url, '_blank');
+                                      return;
+                                    }
+                                    
+                                    // For Supabase Storage paths, create a signed URL
+                                    const { data, error } = await supabase.storage
+                                      .from('submission')
+                                      .createSignedUrl(submission.file_path, 3600); // URL valid for 1 hour
+                                    
+                                    if (error) throw error;
+                                    if (data?.signedUrl) {
+                                      window.open(data.signedUrl, '_blank');
+                                    }
+                                  } catch (error) {
+                                    console.error('Error viewing file:', error);
+                                    toast.error('Failed to open file. Please try again.');
+                                  }
+                                }}
                                 disabled={!submission}
                                 className={`px-3 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 transition ${
                                   submission ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-slate-100 text-slate-400 cursor-not-allowed'
@@ -744,12 +766,38 @@ const MentorDashboard = () => {
                                 <FaEye /> View
                               </button>
                               <button
-                                onClick={() => {
+                                onClick={async () => {
                                   if (!submission) return;
-                                  const link = document.createElement('a');
-                                  link.href = submission.file_url;
-                                  link.download = submission.filename || 'submission';
-                                  link.click();
+                                  try {
+                                    // If it's a direct URL, download it directly
+                                    if (submission.file_url.startsWith('http')) {
+                                      const link = document.createElement('a');
+                                      link.href = submission.file_url;
+                                      link.download = submission.filename || 'submission';
+                                      link.click();
+                                      return;
+                                    }
+                                    
+                                    // For Supabase Storage paths, create a signed URL for download
+                                    const { data, error } = await supabase.storage
+                                      .from('submission')
+                                      .download(submission.file_path);
+                                    
+                                    if (error) throw error;
+                                    
+                                    // Create a download link and trigger it
+                                    const url = URL.createObjectURL(data);
+                                    const link = document.createElement('a');
+                                    link.href = url;
+                                    link.download = submission.filename || 'submission';
+                                    document.body.appendChild(link);
+                                    link.click();
+                                    document.body.removeChild(link);
+                                    URL.revokeObjectURL(url);
+                                  } catch (error) {
+                                    console.error('Error downloading file:', error);
+                                    toast.error('Failed to download file. Please try again.');
+                                  }
                                 }}
                                 disabled={!submission}
                                 className={`px-3 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 transition ${
