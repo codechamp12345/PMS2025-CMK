@@ -458,101 +458,49 @@ const MentorDashboard = () => {
   };
 
   const fetchAllProjectDeliverables = async (projects) => {
-    if (!projects || projects.length === 0) {
-      setProjectDeliverables({});
-      return;
+  if (!projects?.length) {
+    setProjectDeliverables({});
+    return;
+  }
+
+  try {
+    const projectIds = projects.map(p => p.id).filter(Boolean);
+    if (!projectIds.length) return;
+
+    // Use the database function we created
+    const { data, error } = await supabase
+      .rpc('get_mentor_submissions', { project_ids: projectIds });
+
+    if (error) {
+      console.error('Error fetching submissions:', error);
+      throw error;
     }
 
-    try {
-      const projectIds = projects.map(project => project.id).filter(Boolean);
-      
-      // First try with join
-      let { data, error } = await supabase
-        .from('submissions')
-        .select(`
-          id,
-          project_id,
-          user_id,
-          stage,
-          filename,
-          file_url,
-          status,
-          uploaded_at,
-          remark,
-          users!inner(id, name, email)
-        `)
-        .in('project_id', projectIds)
-        .order('uploaded_at', { ascending: false });
+    // Process the data
+    const deliverablesByProject = {};
+    (data || []).forEach(submission => {
+      const projectId = submission.project_id;
+      if (!projectId) return;
 
-      // If join fails, try without join and fetch users separately
-      if (error) {
-        console.warn('Join query failed, trying fallback:', error);
-        
-        const { data: submissionsData, error: submissionsError } = await supabase
-          .from('submissions')
-          .select(`
-            id,
-            project_id,
-            user_id,
-            stage,
-            filename,
-            file_url,
-            status,
-            uploaded_at,
-            remark
-          `)
-          .in('project_id', projectIds)
-          .order('uploaded_at', { ascending: false });
-
-        if (submissionsError) {
-          console.error('Error fetching deliverables:', submissionsError);
-          return;
-        }
-
-        // Fetch users separately
-        const userIds = Array.from(new Set((submissionsData || []).map(s => s.user_id).filter(Boolean)));
-        let userMap = {};
-        
-        if (userIds.length > 0) {
-          const { data: usersData, error: usersError } = await supabase
-            .from('users')
-            .select('id, name, email')
-            .in('id', userIds);
-
-          if (!usersError && usersData) {
-            userMap = usersData.reduce((acc, user) => {
-              acc[user.id] = user;
-              return acc;
-            }, {});
-          }
-        }
-
-        // Combine submissions with user data
-        data = (submissionsData || []).map(submission => ({
-          ...submission,
-          users: userMap[submission.user_id] || { id: submission.user_id, name: 'Unknown', email: '' }
-        }));
+      if (!deliverablesByProject[projectId]) {
+        deliverablesByProject[projectId] = [];
       }
 
-      if (!data) {
-        console.error('No data received from deliverables query');
-        return;
-      }
-
-      // Group deliverables by project_id
-      const deliverablesByProject = {};
-      (data || []).forEach(deliverable => {
-        if (!deliverablesByProject[deliverable.project_id]) {
-          deliverablesByProject[deliverable.project_id] = [];
+      deliverablesByProject[projectId].push({
+        ...submission,
+        users: {
+          id: submission.user_id,
+          name: submission.user_name || 'Unknown User',
+          email: submission.user_email || 'unknown'
         }
-        deliverablesByProject[deliverable.project_id].push(deliverable);
       });
+    });
 
-      setProjectDeliverables(deliverablesByProject);
-    } catch (error) {
-      console.error('Error fetching project deliverables:', error);
-    }
-  };
+    setProjectDeliverables(deliverablesByProject);
+  } catch (error) {
+    console.error('Error in fetchAllProjectDeliverables:', error);
+  }
+};
 
   const setupProjectFilesSubscription = (projectIds) => {
     if (!projectIds || projectIds.length === 0) {
@@ -738,20 +686,35 @@ const MentorDashboard = () => {
                                 onClick={async () => {
                                   if (!submission) return;
                                   try {
-                                    // If it's a direct URL, open it directly
-                                    if (submission.file_url.startsWith('http')) {
-                                      window.open(submission.file_url, '_blank');
-                                      return;
-                                    }
-                                    
-                                    // For Supabase Storage paths, create a signed URL
-                                    const { data, error } = await supabase.storage
-                                      .from('submission')
-                                      .createSignedUrl(submission.file_path, 3600); // URL valid for 1 hour
-                                    
-                                    if (error) throw error;
-                                    if (data?.signedUrl) {
-                                      window.open(data.signedUrl, '_blank');
+                                    try {
+                                      // If it's a direct URL, open it directly
+                                      if (submission.file_url && submission.file_url.startsWith('http')) {
+                                        window.open(submission.file_url, '_blank');
+                                        return;
+                                      }
+                                      
+                                      // Try to create a signed URL if we have a file_path
+                                      if (submission.file_path) {
+                                        const { data, error } = await supabase.storage
+                                          .from('submissions')  // Make sure this matches your bucket name
+                                          .createSignedUrl(submission.file_path, 3600);
+                                        
+                                        if (error) throw error;
+                                        if (data?.signedUrl) {
+                                          window.open(data.signedUrl, '_blank');
+                                          return;
+                                        }
+                                      }
+                                      
+                                      // If we have a file_url but it's not http, try to use it directly
+                                      if (submission.file_url) {
+                                        window.open(submission.file_url, '_blank');
+                                        return;
+                                      }
+                                      
+                                      throw new Error('No valid file URL or path found');
+                                    } catch (innerError) {
+                                      throw innerError; // Re-throw to be caught by outer catch
                                     }
                                   } catch (error) {
                                     console.error('Error viewing file:', error);
@@ -768,35 +731,55 @@ const MentorDashboard = () => {
                               <button
                                 onClick={async () => {
                                   if (!submission) return;
+                                  const loadingToast = toast.loading('Preparing download...');
+                                  
                                   try {
                                     // If it's a direct URL, download it directly
-                                    if (submission.file_url.startsWith('http')) {
+                                    if (submission.file_url?.startsWith('http')) {
                                       const link = document.createElement('a');
                                       link.href = submission.file_url;
                                       link.download = submission.filename || 'submission';
+                                      document.body.appendChild(link);
                                       link.click();
+                                      document.body.removeChild(link);
+                                      toast.dismiss(loadingToast);
+                                      toast.success('Download started');
                                       return;
                                     }
                                     
-                                    // For Supabase Storage paths, create a signed URL for download
-                                    const { data, error } = await supabase.storage
-                                      .from('submission')
-                                      .download(submission.file_path);
+                                    // Handle Supabase Storage download
+                                    let filePath = submission.file_path || submission.filename;
+                                    if (filePath) {
+                                      filePath = filePath.replace(/^[\/\\]+/, ''); // Clean path
+                                      
+                                      // First get the signed URL
+                                      const { data, error } = await supabase.storage
+                                        .from('submissions')
+                                        .createSignedUrl(filePath, 3600);
+                                      
+                                      if (error) throw error;
+                                      
+                                      if (data?.signedUrl) {
+                                        // Create a temporary link and trigger download
+                                        const link = document.createElement('a');
+                                        link.href = data.signedUrl;
+                                        link.download = submission.filename || filePath.split('/').pop() || 'download';
+                                        link.target = '_blank';
+                                        document.body.appendChild(link);
+                                        link.click();
+                                        document.body.removeChild(link);
+                                        
+                                        toast.dismiss(loadingToast);
+                                        toast.success('Download started');
+                                        return;
+                                      }
+                                    }
                                     
-                                    if (error) throw error;
-                                    
-                                    // Create a download link and trigger it
-                                    const url = URL.createObjectURL(data);
-                                    const link = document.createElement('a');
-                                    link.href = url;
-                                    link.download = submission.filename || 'submission';
-                                    document.body.appendChild(link);
-                                    link.click();
-                                    document.body.removeChild(link);
-                                    URL.revokeObjectURL(url);
+                                    throw new Error('No valid file URL or path found for download');
                                   } catch (error) {
-                                    console.error('Error downloading file:', error);
-                                    toast.error('Failed to download file. Please try again.');
+                                    console.error('Download error:', error);
+                                    toast.dismiss(loadingToast);
+                                    toast.error(error.message || 'Failed to download file');
                                   }
                                 }}
                                 disabled={!submission}
