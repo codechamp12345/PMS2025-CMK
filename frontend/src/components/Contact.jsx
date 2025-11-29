@@ -22,7 +22,8 @@ const Contact = () => {
     const testAPIConnection = async () => {
       try {
         console.log('Testing API connection...');
-        const response = await axios.get('http://localhost:5000/api/admin/contacts');
+        const backendUrl = import.meta.env.VITE_BACKEND_URL || 'https://pms2025-cmk.onrender.com';
+        const response = await axios.get(`${backendUrl}/api/admin/contacts`);
         if (response.data.success) {
           console.log('API connection successful');
         } else {
@@ -51,7 +52,8 @@ const Contact = () => {
     setLoadingContacts(true);
     try {
       console.log('Loading contacts for admin via API...');
-      const response = await axios.get('http://localhost:5000/api/admin/contacts');
+      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'https://pms2025-cmk.onrender.com';
+      const response = await axios.get(`${backendUrl}/api/admin/contacts`);
 
       if (response.data.success) {
         console.log('Contacts loaded successfully via API:', response.data.data?.length || 0);
@@ -97,7 +99,8 @@ const Contact = () => {
     setSubmitting(true);
     try {
       console.log('Submitting contact form via API:', { name, email, message });
-      const response = await axios.post('http://localhost:5000/api/contact', {
+      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'https://pms2025-cmk.onrender.com';
+      const response = await axios.post(`${backendUrl}/api/contact`, {
         name: name.trim(),
         email: email.trim().toLowerCase(),
         message: message.trim()

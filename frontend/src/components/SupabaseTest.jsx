@@ -57,8 +57,8 @@ const SupabaseTest = () => {
       )}
 
       <div className="mt-4 text-sm text-gray-600">
-        <p><strong>Frontend:</strong> http://localhost:5173</p>
-        <p><strong>Backend:</strong> http://localhost:5000</p>
+        <p><strong>Frontend:</strong> https://pms-2025-cmk.vercel.app</p>
+        <p><strong>Backend:</strong> https://pms2025-cmk.onrender.com</p>
       </div>
     </div>
   )
