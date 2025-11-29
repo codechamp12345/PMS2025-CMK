@@ -206,7 +206,7 @@ export function AuthProvider({ children }) {
           name: userData.name.trim(),
           role: userData.role || 'mentee',
         },
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
+        emailRedirectTo: import.meta.env.VITE_FRONTEND_URL || `${window.location.origin}/auth/callback`,
       };
 
       const { data, error } = await supabase.auth.signUp({
@@ -281,7 +281,7 @@ export function AuthProvider({ children }) {
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
+          redirectTo: import.meta.env.VITE_FRONTEND_URL || `${window.location.origin}/auth/callback`,
           queryParams: {
             access_type: 'offline',
             prompt: 'select_account',
