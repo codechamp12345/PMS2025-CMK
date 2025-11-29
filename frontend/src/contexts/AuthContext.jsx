@@ -282,6 +282,7 @@ export function AuthProvider({ children }) {
         provider: 'google',
         options: {
           redirectTo: import.meta.env.VITE_FRONTEND_URL || `${window.location.origin}/auth/callback`,
+          skipBrowserRedirect: false,
           queryParams: {
             access_type: 'offline',
             prompt: 'select_account',
