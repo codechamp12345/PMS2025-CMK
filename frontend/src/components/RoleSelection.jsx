@@ -17,23 +17,35 @@ function RoleSelection() {
 
     try {
       // Update user profile with selected role
+      const updates = {
+        role: selectedRole,
+        updated_at: new Date()
+      };
+
+      // If this is a new role selection, initialize the roles array
+      if (!userProfile?.roles || userProfile.roles.length === 0) {
+        updates.roles = [selectedRole];
+      } else if (!userProfile.roles.includes(selectedRole)) {
+        // Add the selected role to the roles array if not already present
+        updates.roles = [...userProfile.roles, selectedRole];
+      }
+
       const { error: updateError } = await supabase
         .from('users')
-        .update({ role: selectedRole })
+        .update(updates)
         .eq('id', user.id);
 
       if (updateError) throw updateError;
 
       // Navigate based on selected role
-      if (selectedRole === 'mentor') {
-        navigate('/mentor-dashboard');
-      } else if (selectedRole === 'mentee') {
-        navigate('/mentee-dashboard');
-      } else if (selectedRole === 'project_coordinator') {
-        navigate('/project-coordinator-dashboard');
-      } else if (selectedRole === 'hod') {
-        navigate('/hod-dashboard');
-      }
+      const dashboardPaths = {
+        mentee: '/components/dashboard/mentee',
+        mentor: '/components/dashboard/mentor',
+        hod: '/components/dashboard/hod',
+        project_coordinator: '/components/dashboard/coordinator',
+      };
+      const dashboardPath = dashboardPaths[selectedRole] || dashboardPaths.mentee;
+      navigate(dashboardPath, { replace: true });
 
     } catch (error) {
       console.error('Role update error:', error);
@@ -43,19 +55,23 @@ function RoleSelection() {
     }
   };
 
-  // If user already has a role, redirect them
-  if (userProfile?.role && userProfile.role !== 'mentee') {
-    const roleRoutes = {
-      mentor: '/mentor-dashboard',
-      mentee: '/mentee-dashboard',
-      project_coordinator: '/project-coordinator-dashboard',
-      hod: '/hod-dashboard'
+  // If user already has a confirmed role (not pending), redirect them
+  if (userProfile?.role && userProfile.role !== 'pending' && userProfile.role !== 'mentee') {
+    const dashboardPaths = {
+      mentee: '/components/dashboard/mentee',
+      mentor: '/components/dashboard/mentor',
+      hod: '/components/dashboard/hod',
+      project_coordinator: '/components/dashboard/coordinator',
     };
     
-    if (roleRoutes[userProfile.role]) {
-      navigate(roleRoutes[userProfile.role]);
-      return null;
-    }
+    const dashboardPath = dashboardPaths[userProfile.role] || dashboardPaths.mentee;
+    navigate(dashboardPath, { replace: true });
+    return null;
+  }
+  
+  // If user has pending role, allow them to select a role
+  if (userProfile?.role === 'pending') {
+    console.log('User has pending role, showing role selection page');
   }
 
   return (
@@ -99,7 +115,7 @@ function RoleSelection() {
                   <p className="text-sm text-gray-600">Faculty guiding students</p>
                 </div>
               </label>
-
+              
               <label className="flex items-center">
                 <input
                   type="radio"

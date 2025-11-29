@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Role Switching</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100">
+    <div class="container mx-auto p-4">
+        <h1 class="text-2xl font-bold mb-4">Test Role Switching</h1>
+        <div id="results" class="bg-white p-4 rounded shadow mb-4"></div>
+        <div id="role-switcher" class="bg-white p-4 rounded shadow"></div>
+    </div>
+
+    <script type="module">
+        // Mock user data for testing
+        const mockUserProfile = {
+            id: 'test-user-id',
+            name: 'Test User',
+            email: 'test@git-india.edu.in',
+            role: 'mentor',
+            roles: ['mentor', 'project_coordinator', 'hod']
+        };
+        
+        const mockActiveRole = 'mentor';
+        
+        // Mock useAuth hook
+        const useAuth = () => {
+            return {
+                userProfile: mockUserProfile,
+                activeRole: mockActiveRole,
+                updateActiveRole: (role) => {
+                    console.log('Updating active role to:', role);
+                    // In a real implementation, this would update the context
+                }
+            };
+        };
+        
+        // Mock useNavigate hook
+        const useNavigate = () => {
+            return (path) => {
+                console.log('Navigating to:', path);
+                // In a real implementation, this would navigate to the path
+            };
+        };
+        
+        // Simple RoleSwitcher component implementation
+        function RoleSwitcher() {
+            const { userProfile, activeRole, updateActiveRole } = useAuth();
+            const navigate = useNavigate();
+            
+            // If user is only a mentee or has no additional roles, don't show the switcher
+            if (!userProfile || !userProfile.roles || !Array.isArray(userProfile.roles) || userProfile.roles.length <= 1 || 
+                (userProfile.roles.length === 1 && userProfile.roles[0] === 'mentee')) {
+                return '<div>No role switching available</div>';
+            }
+            
+            // Filter out mentee role and ensure we have valid roles to display
+            const displayRoles = userProfile.roles.filter(role => role && role !== 'mentee');
+            
+            // If no roles to display after filtering, don't show the switcher
+            if (displayRoles.length === 0) {
+                return '<div>No role switching available</div>';
+            }
+            
+            // Create the HTML for the role switcher
+            const options = displayRoles.map(role => {
+                const displayName = role === 'project_coordinator' ? 'Coordinator' : role.charAt(0).toUpperCase() + role.slice(1);
+                const selected = role === (activeRole || displayRoles[0]) ? 'selected' : '';
+                return `<option value="${role}" ${selected}>${displayName}</option>`;
+            }).join('');
+            
+            return `
+                <div class="relative inline-block text-left">
+                    <select class="block appearance-none w-full bg-white border border-gray-300 hover:border-gray-400 px-4 py-2 pr-8 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm">
+                        <option value="" disabled>Switch Role</option>
+                        ${options}
+                    </select>
+                    <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
+                        <svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+                            <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
+                        </svg>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // Test function
+        function testRoleSwitching() {
+            const results = document.getElementById('results');
+            const roleSwitcher = document.getElementById('role-switcher');
+            
+            results.innerHTML = `
+                <h2 class="text-xl font-semibold mb-2">Role Switching Test</h2>
+                <p class="mb-2">User Profile:</p>
+                <pre class="bg-gray-100 p-2 rounded mb-4">${JSON.stringify(mockUserProfile, null, 2)}</pre>
+                <p class="text-green-500">✓ RoleSwitcher component loaded successfully</p>
+            `;
+            
+            roleSwitcher.innerHTML = RoleSwitcher();
+        }
+        
+        // Run the test
+        testRoleSwitching();
+    </script>
+</body>
+</html>

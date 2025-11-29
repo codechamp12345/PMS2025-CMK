@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 import toast from 'react-hot-toast';
 import { supabase } from '../lib/supabase';
 import { FaUpload, FaEye, FaTrash, FaFileAlt, FaClock, FaCheckCircle, FaExclamationTriangle, FaSpinner, FaDownload } from 'react-icons/fa';
 
 const MenteeDashboard = () => {
+  const navigate = useNavigate();
+  const { signOut, userProfile: authUserProfile, activeRole, updateActiveRole } = useAuth();
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
   const [projects, setProjects] = useState([]);
@@ -14,7 +17,6 @@ const MenteeDashboard = () => {
   const [error, setError] = useState(null);
   const [submissions, setSubmissions] = useState({});
   const [uploading, setUploading] = useState({});
-  const navigate = useNavigate();
   const STORAGE_BUCKET = 'submissions';
 
   // Submission stages configuration (matching MentorDashboard)
@@ -491,8 +493,47 @@ const MenteeDashboard = () => {
                   ))}
                 </select>
               )}
+              
+              {/* Role Switching Dropdown */}
+              {authUserProfile?.roles && authUserProfile.roles.length > 1 && (
+                <div>
+                  <select
+                    value={activeRole || (authUserProfile.roles.length > 0 ? authUserProfile.roles[0] : '')}
+                    onChange={(e) => {
+                      const newRole = e.target.value;
+                      if (newRole && newRole !== activeRole) {
+                        updateActiveRole(newRole);
+                        const dashboardPaths = {
+                          mentee: '/components/dashboard/mentee',
+                          mentor: '/components/dashboard/mentor',
+                          hod: '/components/dashboard/hod',
+                          project_coordinator: '/components/dashboard/coordinator',
+                        };
+                        const dashboardPath = dashboardPaths[newRole] || dashboardPaths.mentee;
+                        navigate(dashboardPath, { replace: true });
+                      }
+                    }}
+                    className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {authUserProfile.roles.map((role) => (
+                      <option key={role} value={role}>
+                        {role === 'project_coordinator' ? 'Coordinator' : role.charAt(0).toUpperCase() + role.slice(1)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              
               <button
-                onClick={() => supabase.auth.signOut()}
+                onClick={async () => {
+                  try {
+                    await signOut();
+                    navigate('/');
+                  } catch (error) {
+                    console.error('Logout error:', error);
+                    navigate('/');
+                  }
+                }}
                 className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
               >
                 Logout
@@ -551,18 +592,26 @@ const MenteeDashboard = () => {
               <div className="bg-white rounded-lg shadow-sm border p-6">
                 <h2 className="text-2xl font-bold text-gray-900 mb-2">{selectedProject.project_name || selectedProject.title || selectedProject.projectName}</h2>
                 <p className="text-gray-600 mb-4">{selectedProject.project_details || selectedProject.description}</p>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <span className="text-gray-500">Domain:</span>
-                    <span className="text-gray-900 ml-2">{selectedProject.domain}</span>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
+                  <div className="bg-gray-50 p-3 rounded-lg">
+                    <div className="text-gray-500 text-xs font-medium mb-1">Domain</div>
+                    <div className="text-gray-900 font-medium">{selectedProject.domain || 'Not specified'}</div>
                   </div>
-                  <div>
-                    <span className="text-gray-500">Mentor:</span>
-                    <span className="text-gray-900 ml-2">{selectedProject.mentor?.name || selectedProject.mentor_email || 'Unassigned'}</span>
+                  <div className="bg-gray-50 p-3 rounded-lg">
+                    <div className="text-gray-500 text-xs font-medium mb-1">Mentor</div>
+                    <div className="text-gray-900 font-medium">{selectedProject.mentor?.name || selectedProject.mentor_email || 'Unassigned'}</div>
                   </div>
-                  <div>
-                    <span className="text-gray-500">Deadline:</span>
-                    <span className="text-gray-900 ml-2">{new Date(selectedProject.deadline).toLocaleDateString()}</span>
+                  <div className="bg-gray-50 p-3 rounded-lg">
+                    <div className="text-gray-500 text-xs font-medium mb-1">Project Duration</div>
+                    <div className="text-gray-900 font-medium">
+                      {selectedProject.duration || selectedProject.coordinatorAssignment?.duration || 'Not specified'}
+                    </div>
+                  </div>
+                  <div className="bg-gray-50 p-3 rounded-lg">
+                    <div className="text-gray-500 text-xs font-medium mb-1">Deadline</div>
+                    <div className="text-gray-900 font-medium">
+                      {selectedProject.deadline ? new Date(selectedProject.deadline).toLocaleDateString() : 'Not set'}
+                    </div>
                   </div>
                 </div>
               </div>

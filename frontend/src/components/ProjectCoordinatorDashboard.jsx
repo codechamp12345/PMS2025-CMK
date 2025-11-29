@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
 import { FaPlus, FaUsers, FaProjectDiagram, FaExclamationTriangle, FaCheckCircle, FaTrash, FaFileCsv } from 'react-icons/fa';
 import CSVImport from './CSVImport';
 
 const ProjectCoordinatorDashboard = () => {
+  const { signOut, userProfile: authUserProfile, activeRole, updateActiveRole } = useAuth();
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -18,6 +20,7 @@ const ProjectCoordinatorDashboard = () => {
   const [projectDetails, setProjectDetails] = useState('');
   const [mentorName, setMentorName] = useState('');
   const [mentorEmail, setMentorEmail] = useState('');
+  const [duration, setDuration] = useState('1 Semester');
   const [menteeEntries, setMenteeEntries] = useState([{ name: '', email: '' }]);
 
   const navigate = useNavigate();
@@ -171,6 +174,11 @@ const ProjectCoordinatorDashboard = () => {
       return;
     }
 
+    if (!['1 Semester', '2 Semesters', '3 Semesters'].includes(duration)) {
+      setError('Please select a valid project duration');
+      return;
+    }
+
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(trimmedMentorEmail)) {
       setError('Please enter a valid mentor email address');
@@ -286,7 +294,8 @@ const ProjectCoordinatorDashboard = () => {
           mentor_name: mentorDisplayName,
           mentor_email: trimmedMentorEmail,
           created_by: userProfile.id,
-          status: 'pending'
+          status: 'pending',
+          duration: duration
         })
         .select()
         .maybeSingle();
@@ -391,8 +400,47 @@ const ProjectCoordinatorDashboard = () => {
               >
                 <FaFileCsv /> {showCSVImport ? 'Hide CSV Import' : 'Import CSV'}
               </button>
+              
+              {/* Role Switching Dropdown */}
+              {authUserProfile?.roles && authUserProfile.roles.length > 1 && (
+                <div>
+                  <select
+                    value={activeRole || (authUserProfile.roles.length > 0 ? authUserProfile.roles[0] : '')}
+                    onChange={(e) => {
+                      const newRole = e.target.value;
+                      if (newRole && newRole !== activeRole) {
+                        updateActiveRole(newRole);
+                        const dashboardPaths = {
+                          mentee: '/components/dashboard/mentee',
+                          mentor: '/components/dashboard/mentor',
+                          hod: '/components/dashboard/hod',
+                          project_coordinator: '/components/dashboard/coordinator',
+                        };
+                        const dashboardPath = dashboardPaths[newRole] || dashboardPaths.project_coordinator;
+                        navigate(dashboardPath, { replace: true });
+                      }
+                    }}
+                    className="bg-white border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {authUserProfile.roles.map((role) => (
+                      <option key={role} value={role}>
+                        {role === 'project_coordinator' ? 'Coordinator' : role.charAt(0).toUpperCase() + role.slice(1)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              
               <button
-                onClick={() => supabase.auth.signOut()}
+                onClick={async () => {
+                  try {
+                    await signOut();
+                    navigate('/');
+                  } catch (error) {
+                    console.error('Logout error:', error);
+                    navigate('/');
+                  }
+                }}
                 className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
               >
                 Logout
@@ -479,18 +527,35 @@ const ProjectCoordinatorDashboard = () => {
             </div>
 
             {/* Project Details */}
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Project Details *
-              </label>
+            <div className="space-y-2">
+              <label htmlFor="projectDetails" className="block text-sm font-medium text-gray-700">Project Details</label>
               <textarea
+                id="projectDetails"
                 value={projectDetails}
                 onChange={(e) => setProjectDetails(e.target.value)}
-                placeholder="Enter project description and details"
-                rows={4}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                rows={3}
+                placeholder="Enter project description, requirements, and any other relevant details..."
                 required
               />
+            </div>
+
+            {/* Duration */}
+            <div className="space-y-2">
+              <label htmlFor="duration" className="block text-sm font-medium text-gray-700">
+                Project Duration
+              </label>
+              <select
+                id="duration"
+                value={duration}
+                onChange={(e) => setDuration(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                required
+              >
+                <option value="1 Semester">1 Semester (6 months)</option>
+                <option value="2 Semesters">2 Semesters (12 months)</option>
+                <option value="3 Semesters">3 Semesters (1.5 years)</option>
+              </select>
             </div>
 
             {/* Mentor Details */}

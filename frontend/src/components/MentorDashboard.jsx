@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 import toast from 'react-hot-toast';
 import {
   FaEye,
@@ -51,6 +52,7 @@ const formatDate = (dateString) => {
 
 const MentorDashboard = () => {
   const navigate = useNavigate();
+  const { signOut, userProfile, activeRole, updateActiveRole } = useAuth();
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [mentor, setMentor] = useState(null);
   const [projects, setProjects] = useState([]);
@@ -453,8 +455,13 @@ const MentorDashboard = () => {
   };
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    navigate('/login');
+    try {
+      await signOut();
+      navigate('/');
+    } catch (error) {
+      console.error('Logout error:', error);
+      navigate('/');
+    }
   };
 
   const fetchAllProjectDeliverables = async (projects) => {
@@ -589,6 +596,38 @@ const MentorDashboard = () => {
             <div className="text-sm font-semibold text-white">{mentor?.name || mentor?.email}</div>
             <div className="text-xs text-slate-400 capitalize">{mentor?.role}</div>
           </div>
+          
+          {/* Role Switching Dropdown */}
+          {userProfile?.roles && userProfile.roles.length > 1 && (
+            <div className="mb-4">
+              <label className="block text-xs font-medium text-slate-400 mb-2">Switch Role</label>
+              <select
+                value={activeRole || (userProfile.roles.length > 0 ? userProfile.roles[0] : '')}
+                onChange={(e) => {
+                  const newRole = e.target.value;
+                  if (newRole && newRole !== activeRole) {
+                    updateActiveRole(newRole);
+                    const dashboardPaths = {
+                      mentee: '/components/dashboard/mentee',
+                      mentor: '/components/dashboard/mentor',
+                      hod: '/components/dashboard/hod',
+                      project_coordinator: '/components/dashboard/coordinator',
+                    };
+                    const dashboardPath = dashboardPaths[newRole] || dashboardPaths.mentor;
+                    navigate(dashboardPath, { replace: true });
+                  }
+                }}
+                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {userProfile.roles.map((role) => (
+                  <option key={role} value={role}>
+                    {role === 'project_coordinator' ? 'Coordinator' : role.charAt(0).toUpperCase() + role.slice(1)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          
           <button
             onClick={handleLogout}
             className="w-full flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white font-semibold py-2 rounded-lg transition"
@@ -610,10 +649,28 @@ const MentorDashboard = () => {
                 <div>
                   <h1 className="text-3xl font-bold text-slate-900">{selectedProject.title || selectedProject.project_name}</h1>
                   <p className="text-slate-500 mt-2 max-w-3xl">{selectedProject.description || selectedProject.project_details || 'No description provided.'}</p>
+                  
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <span className="inline-flex items-center px-3 py-1 rounded-full bg-blue-100 text-blue-700 text-sm font-medium">
+                      {selectedProject.domain || 'Domain not set'}
+                    </span>
+                    {selectedProject.duration && (
+                      <span className="inline-flex items-center px-3 py-1 rounded-full bg-green-100 text-green-700 text-sm font-medium">
+                        <span className="text-slate-600 text-xs mr-1">Duration:</span> {selectedProject.duration}
+                      </span>
+                    )}
+                    {selectedProject.coordinatorAssignment?.duration && (
+                      <span className="inline-flex items-center px-3 py-1 rounded-full bg-purple-100 text-purple-700 text-sm font-medium">
+                        <span className="text-slate-600 text-xs mr-1">Project Duration:</span> {selectedProject.coordinatorAssignment.duration}
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <span className="inline-flex items-center px-3 py-1 rounded-full bg-blue-100 text-blue-700 text-sm font-medium">
-                  {selectedProject.domain || 'Domain not set'}
-                </span>
+                <div className="flex flex-col items-end gap-2">
+                  <span className="text-xs text-slate-400">
+                    Last updated: {new Date(selectedProject.updated_at || selectedProject.created_at).toLocaleDateString()}
+                  </span>
+                </div>
               </div>
             </header>
 

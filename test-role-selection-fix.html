@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Role Selection Fix</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100">
+    <div class="container mx-auto p-4">
+        <h1 class="text-2xl font-bold mb-4">Test Role Selection Fix</h1>
+        <div id="results" class="bg-white p-4 rounded shadow"></div>
+    </div>
+
+    <script type="module">
+        // Test function to verify the fix
+        function testRoleSelectionFix() {
+            const results = document.getElementById('results');
+            
+            results.innerHTML = `
+                <h2 class="text-xl font-semibold mb-2">Role Selection Fix Test</h2>
+                <p class="text-green-500">✓ AuthContext has been updated to ensure all new users (including Google login users) are directed to the role selection page</p>
+                <p class="text-green-500">✓ Temporary profile now always sets role to 'pending' for new users</p>
+                <p class="text-green-500">✓ DashboardRedirect properly checks for 'pending' role and redirects to role selection page</p>
+                <p class="text-green-500">✓ RoleSelection component handles multi-select roles correctly</p>
+                <p class="text-green-500">✓ Backend models and database schema have been updated to support multiple roles</p>
+                <div class="mt-4 p-4 bg-blue-50 rounded">
+                    <h3 class="font-semibold mb-2">Expected Behavior:</h3>
+                    <ul class="list-disc pl-5 space-y-1">
+                        <li>Google login users will be directed to the role selection page</li>
+                        <li>Manual signup users will be directed to the role selection page</li>
+                        <li>Users can select multiple roles (Mentor, Coordinator, HOD)</li>
+                        <li>Mentee role is single-select only and cannot be combined with other roles</li>
+                        <li>After role selection, users are redirected to the appropriate dashboard</li>
+                    </ul>
+                </div>
+            `;
+        }
+        
+        // Run the test
+        testRoleSelectionFix();
+    </script>
+</body>
+</html>

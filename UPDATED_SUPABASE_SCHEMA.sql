@@ -6,10 +6,11 @@ CREATE TABLE IF NOT EXISTS public.users (
   name TEXT,
   email TEXT UNIQUE NOT NULL,
   role TEXT NOT NULL DEFAULT 'mentee',
+  roles TEXT[] DEFAULT '{}',  -- Add roles array field
   "isVerified" BOOLEAN DEFAULT TRUE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  CONSTRAINT role_check CHECK (LOWER(role) IN ('mentee', 'mentor', 'project_coordinator', 'hod'))
+  CONSTRAINT role_check CHECK (LOWER(role) IN ('pending', 'mentee', 'mentor', 'project_coordinator', 'hod'))
 );
 
 -- Create projects table
@@ -289,6 +290,7 @@ RETURNS TRIGGER AS $$
 DECLARE
   user_name TEXT;
   user_role TEXT;
+  user_roles TEXT[];  -- Add roles variable
 BEGIN
   -- Extract name from metadata or email
   user_name := COALESCE(
@@ -299,20 +301,25 @@ BEGIN
 
   -- Set default role or get from metadata
   user_role := COALESCE(NEW.raw_user_meta_data->>'role', 'mentee');
+  
+  -- Set default roles array or get from metadata
+  user_roles := COALESCE(NEW.raw_user_meta_data->'roles', '[]'::jsonb)::TEXT[];
 
   -- Insert or update user profile (handle conflicts gracefully)
-  INSERT INTO public.users (id, name, email, role, "isVerified")
+  INSERT INTO public.users (id, name, email, role, roles, "isVerified")
   VALUES (
     NEW.id,
     user_name,
     NEW.email,
     user_role,
+    user_roles,
     COALESCE(NEW.email_confirmed_at IS NOT NULL, true)
   )
   ON CONFLICT (id) DO UPDATE SET
     name = EXCLUDED.name,
     email = EXCLUDED.email,
     role = EXCLUDED.role,
+    roles = EXCLUDED.roles,
     "isVerified" = EXCLUDED."isVerified",
     updated_at = NOW();
 

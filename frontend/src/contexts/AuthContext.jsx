@@ -1,39 +1,29 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 
-const AuthContext = createContext({});
+const AuthContext = createContext();
 
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
-};
+export function useAuth() {
+  return useContext(AuthContext);
+}
 
-export const AuthProvider = ({ children }) => {
+export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
+  const [activeRole, setActiveRole] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Get initial session
     const getInitialSession = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
           setUser(session.user);
 
-          // Try to load profile from localStorage first for faster loading
-          const storedProfile = localStorage.getItem('userProfile');
-          if (storedProfile) {
-            try {
-              const profile = JSON.parse(storedProfile);
-              setUserProfile(profile);
-              console.log('Profile loaded from localStorage:', profile);
-            } catch (error) {
-              console.error('Error parsing stored profile:', error);
-            }
+          // Try to restore active role quickly for smoother UX
+          const storedActiveRole = localStorage.getItem('activeRole');
+          if (storedActiveRole) {
+            setActiveRole(storedActiveRole);
           }
 
           // Fetch profile in parallel, don't wait for it
@@ -62,6 +52,7 @@ export const AuthProvider = ({ children }) => {
             await supabase.auth.signOut();
             setUser(null);
             setUserProfile(null);
+            setActiveRole(null);
             setLoading(false);
             return;
           }
@@ -69,25 +60,13 @@ export const AuthProvider = ({ children }) => {
           setUser(session.user);
           console.log('User set in context');
 
-          // Create a temporary profile from user metadata if available
-          const tempProfile = {
-            id: session.user.id,
-            email: session.user.email,
-            name: session.user.user_metadata?.name || session.user.email.split('@')[0],
-            role: session.user.user_metadata?.role || getRoleFromEmail(session.user.email),
-            isVerified: true
-          };
-
-          // Set temporary profile immediately for navigation
-          setUserProfile(tempProfile);
-          console.log('Temporary profile set:', tempProfile);
-
           // Try to fetch real profile in background
           fetchUserProfile(session.user.id);
         } else {
           console.log('Auth state change - No user');
           setUser(null);
           setUserProfile(null);
+          setActiveRole(null);
         }
         setLoading(false);
         console.log('Auth loading set to false');
@@ -116,15 +95,16 @@ export const AuthProvider = ({ children }) => {
           // Get current session to get user info
           const { data: { session } } = await supabase.auth.getSession();
           if (session?.user) {
-            // Try to create the profile manually
+            // For new users, default to pending with empty roles
             const { data: insertData, error: insertError } = await supabase
               .from('users')
               .insert({
                 id: session.user.id,
                 email: session.user.email,
                 name: session.user.user_metadata?.name || session.user.email.split('@')[0],
-                role: session.user.user_metadata?.role || getRoleFromEmail(session.user.email),
-                isVerified: true
+                role: 'pending',
+                roles: [],
+                isVerified: true,
               })
               .select()
               .single();
@@ -140,6 +120,7 @@ export const AuthProvider = ({ children }) => {
               console.log('User profile created successfully:', insertData);
               setUserProfile(insertData);
               localStorage.setItem('userProfile', JSON.stringify(insertData));
+              initializeActiveRole(insertData);
               return;
             }
           }
@@ -154,10 +135,31 @@ export const AuthProvider = ({ children }) => {
       setUserProfile(data);
       // Store in localStorage for compatibility with existing components
       localStorage.setItem('userProfile', JSON.stringify(data));
+
+      initializeActiveRole(data);
     } catch (error) {
       console.error('Error fetching user profile:', error);
       // Keep temporary profile on error
       console.log('Keeping temporary profile due to error');
+    }
+  };
+
+  const initializeActiveRole = (profile) => {
+    const storedActiveRole = localStorage.getItem('activeRole');
+    console.log('Stored active role:', storedActiveRole);
+    console.log('User roles:', profile.roles);
+
+    if (storedActiveRole && profile.roles && profile.roles.includes(storedActiveRole)) {
+      console.log('Setting active role from localStorage:', storedActiveRole);
+      setActiveRole(storedActiveRole);
+    } else if (profile.roles && profile.roles.length > 0) {
+      console.log('Setting active role to first role:', profile.roles[0]);
+      setActiveRole(profile.roles[0]);
+      localStorage.setItem('activeRole', profile.roles[0]);
+    } else {
+      console.log('Setting active role to primary role:', profile.role);
+      setActiveRole(profile.role);
+      localStorage.setItem('activeRole', profile.role);
     }
   };
 
@@ -166,13 +168,13 @@ export const AuthProvider = ({ children }) => {
     // Development mode - allow specific test emails
     const isDevelopment = import.meta.env.DEV;
     const testEmails = [
-      'atharvghosalkar22@gmail.com', // Your test email
+      'atharvghosalkar22@gmail.com', // Test email
       'test@gmail.com',
       'admin@gmail.com',
       'mentee@git-india.edu.in',
       'mentor@git-india.edu.in',
       'hod@git-india.edu.in',
-      'coordinator@git-india.edu.in'
+      'coordinator@git-india.edu.in',
     ];
     
     if (isDevelopment && testEmails.includes(email.toLowerCase())) {
@@ -180,16 +182,6 @@ export const AuthProvider = ({ children }) => {
     }
     
     return email.toLowerCase().endsWith('@git-india.edu.in');
-  };
-
-  // Determine role from email as fallback
-  const getRoleFromEmail = (email) => {
-    const emailLower = email.toLowerCase();
-    if (emailLower.includes('hod@')) return 'hod';
-    if (emailLower.includes('mentor@')) return 'mentor';
-    if (emailLower.includes('coordinator@')) return 'project_coordinator';
-    if (emailLower.includes('admin@')) return 'hod';
-    return 'mentee'; // default
   };
 
   const signUp = async (email, password, userData) => {
@@ -212,15 +204,15 @@ export const AuthProvider = ({ children }) => {
       const signupOptions = {
         data: {
           name: userData.name.trim(),
-          role: userData.role || 'mentee'
+          role: userData.role || 'mentee',
         },
-        emailRedirectTo: `${window.location.origin}/auth/callback`
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
       };
 
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
-        options: signupOptions
+        options: signupOptions,
       });
 
       if (error) throw error;
@@ -233,7 +225,7 @@ export const AuthProvider = ({ children }) => {
       return { 
         data, 
         error: null,
-        message
+        message,
       };
     } catch (error) {
       console.error('Signup error:', error);
@@ -259,30 +251,17 @@ export const AuthProvider = ({ children }) => {
 
       const { data, error } = await supabase.auth.signInWithPassword({
         email: email.toLowerCase().trim(),
-        password
+        password,
       });
 
       if (error) {
-        console.error('Supabase auth error details:', {
-          message: error.message,
-          status: error.status,
-          statusText: error.statusText
-        });
-        
         // Handle specific error cases
         if (error.message.includes('Email not confirmed')) {
           throw new Error('Please verify your email address before signing in. Check your inbox for the verification link.');
         }
-        if (error.message.includes('Invalid login credentials')) {
-          throw new Error('Invalid email or password. Please check your credentials and try again.');
-        }
-        if (error.message.includes('Too many requests')) {
-          throw new Error('Too many login attempts. Please wait a moment and try again.');
-        }
         throw error;
       }
-
-      // Check if user's email is verified (skip in development)
+      
       if (data.user && !data.user.email_confirmed_at && !import.meta.env.DEV) {
         throw new Error('Please verify your email address before signing in. Check your inbox for the verification link.');
       }
@@ -307,9 +286,9 @@ export const AuthProvider = ({ children }) => {
             access_type: 'offline',
             prompt: 'select_account',
             // Only restrict domain in production
-            ...(isDevelopment ? {} : { hd: 'git-india.edu.in' })
-          }
-        }
+            ...(isDevelopment ? {} : { hd: 'git-india.edu.in' }),
+          },
+        },
       });
 
       if (error) {
@@ -331,24 +310,52 @@ export const AuthProvider = ({ children }) => {
       if (error) throw error;
       setUser(null);
       setUserProfile(null);
+      setActiveRole(null);
       // Clear localStorage
       localStorage.removeItem('userProfile');
+      localStorage.removeItem('activeRole');
     } catch (error) {
       console.error('Error signing out:', error);
+    }
+  };
+
+  // Allow components to update just the active role without hitting Supabase
+  const updateActiveRole = (role) => {
+    setActiveRole(role);
+    localStorage.setItem('activeRole', role);
+  };
+
+  // Ensure we sync local profile writes with the new role switching flow
+  const updateUserProfile = (profile) => {
+    setUserProfile(profile);
+    localStorage.setItem('userProfile', JSON.stringify(profile));
+
+    const storedActiveRole = localStorage.getItem('activeRole');
+    if (storedActiveRole && profile.roles && profile.roles.includes(storedActiveRole)) {
+      setActiveRole(storedActiveRole);
+    } else if (profile.roles && profile.roles.length > 0) {
+      setActiveRole(profile.roles[0]);
+      localStorage.setItem('activeRole', profile.roles[0]);
+    } else {
+      setActiveRole(profile.role);
+      localStorage.setItem('activeRole', profile.role);
     }
   };
 
   const value = {
     user,
     userProfile,
+    activeRole,
     loading,
     signUp,
     signIn,
     signInWithGoogle,
     signOut,
+    updateUserProfile,
+    updateActiveRole,
     validateEmailDomain,
     isAuthenticated: !!user,
-    isVerified: userProfile?.isVerified || false
+    isVerified: userProfile?.isVerified || false,
   };
 
   return (

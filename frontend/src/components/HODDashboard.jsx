@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
 
 const HodDashboard = () => {
-  const { signOut, user, userProfile, isAuthenticated } = useAuth();
+  const navigate = useNavigate();
+  const { signOut, user, userProfile, isAuthenticated, activeRole, updateActiveRole } = useAuth();
   const [mentors, setMentors] = useState([]);
   const [mentees, setMentees] = useState([]);
   const [projects, setProjects] = useState([]);
@@ -221,9 +223,10 @@ const HodDashboard = () => {
   const handleLogout = async () => {
     try {
       await signOut();
-      window.location.href = "/";
+      navigate('/');
     } catch (error) {
       console.error('Logout error:', error);
+      navigate('/');
     }
   };
 
@@ -291,12 +294,43 @@ const HodDashboard = () => {
             Welcome back! Manage all projects, mentors, mentees, and assignments.
           </p>
         </div>
-        <button
-          className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 transition-colors"
-          onClick={handleLogout}
-        >
-          Logout
-        </button>
+        <div className="flex items-center space-x-3">
+          {/* Role Switching Dropdown */}
+          {userProfile?.roles && userProfile.roles.length > 1 && (
+            <div>
+              <select
+                value={activeRole || (userProfile.roles.length > 0 ? userProfile.roles[0] : '')}
+                onChange={(e) => {
+                  const newRole = e.target.value;
+                  if (newRole && newRole !== activeRole) {
+                    updateActiveRole(newRole);
+                    const dashboardPaths = {
+                      mentee: '/components/dashboard/mentee',
+                      mentor: '/components/dashboard/mentor',
+                      hod: '/components/dashboard/hod',
+                      project_coordinator: '/components/dashboard/coordinator',
+                    };
+                    const dashboardPath = dashboardPaths[newRole] || dashboardPaths.hod;
+                    navigate(dashboardPath, { replace: true });
+                  }
+                }}
+                className="bg-white border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {userProfile.roles.map((role) => (
+                  <option key={role} value={role}>
+                    {role === 'project_coordinator' ? 'Coordinator' : role.charAt(0).toUpperCase() + role.slice(1)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          <button
+            className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 transition-colors"
+            onClick={handleLogout}
+          >
+            Logout
+          </button>
+        </div>
       </div>
 
       {/* Statistics Cards */}
@@ -459,6 +493,7 @@ const HodDashboard = () => {
                   <th className="px-4 py-2 text-left">Project Name</th>
                   <th className="px-4 py-2 text-left">Type</th>
                   <th className="px-4 py-2 text-left">Mentor</th>
+                  <th className="px-4 py-2 text-left">Duration</th>
                   <th className="px-4 py-2 text-left">Status/Details</th>
                   <th className="px-4 py-2 text-left">Created</th>
                 </tr>
@@ -495,6 +530,11 @@ const HodDashboard = () => {
                       ) : (
                         <span className="text-gray-500">No mentor</span>
                       )}
+                    </td>
+                    <td className="px-4 py-2">
+                      <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded">
+                        {project.coordinatorAssignment?.duration || '1 Semester'}
+                      </span>
                     </td>
                     <td className="px-4 py-2">
                       {project.assigned_by ? (
@@ -565,6 +605,14 @@ const HodDashboard = () => {
                   ))}
                 </ul>
               )}
+            </div>
+            <div>
+              <p className="font-medium text-gray-900">Duration</p>
+              <p>
+                <span className="px-2 py-1 bg-blue-100 text-blue-800 text-sm font-medium rounded">
+                  {selectedProject.coordinatorAssignment?.duration || '1 Semester'}
+                </span>
+              </p>
             </div>
           </div>
         </div>

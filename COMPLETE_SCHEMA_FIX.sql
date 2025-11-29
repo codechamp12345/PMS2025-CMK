@@ -1,6 +1,10 @@
 -- Complete Schema Fix for Project Management System
 -- Run this in Supabase SQL Editor to add missing fields
 
+-- Add missing fields to users table
+ALTER TABLE public.users 
+ADD COLUMN IF NOT EXISTS roles TEXT[] DEFAULT '{}';  -- Add roles array field
+
 -- Add missing fields to projects table
 ALTER TABLE public.projects 
 ADD COLUMN IF NOT EXISTS deadline DATE,

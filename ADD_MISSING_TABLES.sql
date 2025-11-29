@@ -1,6 +1,10 @@
 -- Add missing tables for MenteeDashboard functionality
 -- Run this in Supabase SQL Editor
 
+-- Add roles field to users table if it doesn't exist
+ALTER TABLE public.users 
+ADD COLUMN IF NOT EXISTS roles TEXT[] DEFAULT '{}';  -- Add roles array field
+
 -- Create submissions table
 CREATE TABLE IF NOT EXISTS public.submissions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

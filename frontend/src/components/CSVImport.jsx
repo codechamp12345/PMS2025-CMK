@@ -18,7 +18,8 @@ const CSVImport = ({ onImportComplete, coordinatorId }) => {
     'Mentor Name': ['mentor name', 'mentor_name', 'mentorname', 'mentor'],
     'Mentor Email': ['mentor email', 'mentor_email', 'mentoremail', 'mentor email address'],
     'Mentee Name': ['mentee name', 'mentee_name', 'menteename', 'mentee', 'student name'],
-    'Mentee Email': ['mentee email', 'mentee_email', 'menteeemail', 'mentee email address', 'student email']
+    'Mentee Email': ['mentee email', 'mentee_email', 'menteeemail', 'mentee email address', 'student email'],
+    'Duration': ['duration', 'project duration', 'timeframe']
   };
   const optionalColumns = ['Project Details', 'Project Status'];
 
@@ -235,20 +236,19 @@ const CSVImport = ({ onImportComplete, coordinatorId }) => {
           continue;
         }
 
-        // 4. Create or update project
         let projectId;
         if (existingProject) {
           // Update existing project
-          const updateData = {
-            project_details: row['Project Details'] || existingProject.project_details,
-            mentor_id: mentorProfile?.id || existingProject.mentor_id,
-            mentor_email: row['Mentor Email'].toLowerCase(),
-            mentees: [...(existingProject.mentees || []), menteeProfile.id].filter((id, index, arr) => arr.indexOf(id) === index) // Remove duplicates
-          };
-
           const { data: updatedProject, error: updateError } = await supabase
             .from('projects')
-            .update(updateData)
+            .update({
+              project_name: row['Project Name'],
+              project_details: row['Project Details'] || 'Imported from CSV',
+              mentor_id: mentorProfile?.id || null,
+              mentor_email: row['Mentor Email'].toLowerCase(),
+              mentees: [menteeProfile.id],
+              assigned_by: coordinatorId
+            })
             .eq('id', existingProject.id)
             .select()
             .single();
@@ -292,7 +292,8 @@ const CSVImport = ({ onImportComplete, coordinatorId }) => {
             mentor_name: row['Mentor Name'],
             mentor_email: row['Mentor Email'].toLowerCase(),
             created_by: coordinatorId,
-            status: row['Project Status'] || 'pending'
+            status: row['Project Status'] || 'pending',
+            duration: normalizeDuration(row['Duration'])
           });
 
         if (assignmentError) {
@@ -420,22 +421,34 @@ const CSVImport = ({ onImportComplete, coordinatorId }) => {
   const handleDownloadTemplate = () => {
     const templateData = [
       {
-        'Project Name': 'Sample Project 1',
-        'Mentor Name': 'Dr. John Smith',
-        'Mentor Email': 'john.smith@git-india.edu.in',
-        'Mentee Name': 'Alice Johnson',
-        'Mentee Email': 'alice.johnson@git-india.edu.in',
-        'Project Details': 'A sample project description',
-        'Project Status': 'pending'
+        'Project Name': 'E-commerce Website',
+        'Mentor Name': 'Dr. Rajesh Kumar',
+        'Mentor Email': 'rajesh.kumar@git-india.edu.in',
+        'Mentee Name': 'Priya Sharma',
+        'Mentee Email': 'priya.sharma@git-india.edu.in',
+        'Project Details': 'Development of a full-stack e-commerce platform with payment integration',
+        'Project Status': 'pending',
+        'Duration': '2 Semesters'
       },
       {
-        'Project Name': 'Sample Project 2',
-        'Mentor Name': 'Dr. Jane Doe',
-        'Mentor Email': 'jane.doe@git-india.edu.in',
-        'Mentee Name': 'Bob Wilson',
-        'Mentee Email': 'bob.wilson@git-india.edu.in',
-        'Project Details': 'Another sample project description',
-        'Project Status': 'active'
+        'Project Name': 'AI Chatbot',
+        'Mentor Name': 'Dr. Meera Patel',
+        'Mentor Email': 'meera.patel@git-india.edu.in',
+        'Mentee Name': 'Amit Verma',
+        'Mentee Email': 'amit.verma@git-india.edu.in',
+        'Project Details': 'Building an intelligent chatbot using NLP and machine learning',
+        'Project Status': 'active',
+        'Duration': '3 Semesters'
+      },
+      {
+        'Project Name': 'Smart Attendance System',
+        'Mentor Name': 'Dr. Sanjay Gupta',
+        'Mentor Email': 'sanjay.gupta@git-india.edu.in',
+        'Mentee Name': 'Neha Singh',
+        'Mentee Email': 'neha.singh@git-india.edu.in',
+        'Project Details': 'RFID and facial recognition based attendance system',
+        'Project Status': 'pending',
+        'Duration': '1 Semester'
       }
     ];
 
@@ -636,6 +649,21 @@ const CSVImport = ({ onImportComplete, coordinatorId }) => {
       )}
     </div>
   );
+};
+
+// Helper function to normalize duration input
+const normalizeDuration = (duration) => {
+  if (!duration) return '1 Semester';
+  
+  const lowerDuration = String(duration).toLowerCase().trim();
+  if (lowerDuration.includes('1') || lowerDuration.includes('one') || lowerDuration.includes('single') || lowerDuration.includes('6 month')) {
+    return '1 Semester';
+  } else if (lowerDuration.includes('2') || lowerDuration.includes('two') || lowerDuration.includes('12 month') || lowerDuration.includes('1 year')) {
+    return '2 Semesters';
+  } else if (lowerDuration.includes('3') || lowerDuration.includes('three') || lowerDuration.includes('1.5') || lowerDuration.includes('18 month') || lowerDuration.includes('1.5 year')) {
+    return '3 Semesters';
+  }
+  return '1 Semester';
 };
 
 export default CSVImport;

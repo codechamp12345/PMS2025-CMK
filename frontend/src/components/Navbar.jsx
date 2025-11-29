@@ -2,13 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import RoleSwitcher from './RoleSwitcher';
 
 const Navbar = () => {
   // .1 - Hooks setup
   const navigate = useNavigate();
   const location = useLocation();
   const [isScrolled, setIsScrolled] = useState(false);
-  const { user, userProfile, isAuthenticated, signOut } = useAuth();
+  const { user, userProfile, activeRole, isAuthenticated, signOut } = useAuth();
 
   // .2 - Scroll effect for navbar styling
   useEffect(() => {
@@ -18,6 +19,12 @@ const Navbar = () => {
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
+
+  useEffect(() => {
+    if (userProfile) {
+      console.log('Navbar active role:', activeRole, 'available roles:', userProfile.roles);
+    }
+  }, [activeRole, userProfile]);
 
   // .3 - Base Navbar links
   const baseLinks = [
@@ -127,8 +134,14 @@ const Navbar = () => {
                   {/* User Profile Info */}
                   <div className="hidden md:flex flex-col items-end">
                     <span className="text-sm font-medium text-gray-700">{userProfile.name}</span>
-                    <span className="text-xs text-gray-500 capitalize">{userProfile.role}</span>
+                    <span className="text-xs text-gray-500 capitalize">
+                      {activeRole || userProfile.role}
+                      {userProfile.roles && userProfile.roles.length > 1 ? ` (${userProfile.roles.length} roles)` : ''}
+                    </span>
                   </div>
+                  
+                  {/* Role Switching UI */}
+                  <RoleSwitcher />
                   
                   {/* User Avatar */}
                   <div className="w-8 h-8 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-full flex items-center justify-center">
@@ -179,7 +192,10 @@ const Navbar = () => {
               </div>
               <div className="flex-1">
                 <p className="text-sm font-medium text-gray-700">{userProfile.name}</p>
-                <p className="text-xs text-gray-500 capitalize">{userProfile.role}</p>
+                <p className="text-xs text-gray-500 capitalize">
+                  {activeRole || userProfile.role}
+                  {userProfile.roles && userProfile.roles.length > 1 ? ` (${userProfile.roles.length} roles)` : ''}
+                </p>
               </div>
             </div>
           )}
