@@ -3,8 +3,17 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
 function ProtectedRoute({ children, requiredRole = null }) {
-  const { user, userProfile, loading, isAuthenticated } = useAuth();
+  const { user, userProfile, loading, isAuthenticated, activeRole } = useAuth();
   const location = useLocation();
+
+  console.log('ProtectedRoute check:', { 
+    requiredRole, 
+    userRole: userProfile?.role, 
+    activeRole, 
+    userProfileRoles: userProfile?.roles,
+    isAuthenticated,
+    user: user?.email
+  });
 
   // Show loading spinner while checking authentication
   if (loading) {
@@ -20,6 +29,7 @@ function ProtectedRoute({ children, requiredRole = null }) {
 
   // Redirect to login if not authenticated
   if (!isAuthenticated || !user) {
+    console.log('ProtectedRoute: Not authenticated, redirecting to login');
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
@@ -36,32 +46,39 @@ function ProtectedRoute({ children, requiredRole = null }) {
   }
 
   // Check role-based access if required
-  if (requiredRole && userProfile.role !== requiredRole) {
-    // Redirect to appropriate dashboard based on user's actual role
-    const role = userProfile.role?.toLowerCase();
-    let redirectPath = '/';
-
-    switch (role) {
-      case 'mentee':
-        redirectPath = '/components/dashboard/mentee';
-        break;
-      case 'mentor':
-        redirectPath = '/components/dashboard/mentor';
-        break;
-      case 'hod':
-        redirectPath = '/components/dashboard/hod';
-        break;
-      case 'project_coordinator':
-        redirectPath = '/components/dashboard/coordinator';
-        break;
-      default:
-        redirectPath = '/';
+  if (requiredRole) {
+    // Use activeRole if available, otherwise fallback to primary role
+    const currentRole = (activeRole || userProfile.role)?.toLowerCase();
+    const requiredRoleLower = requiredRole.toLowerCase();
+    
+    if (currentRole !== requiredRoleLower) {
+      // Redirect to appropriate dashboard based on user's actual role
+      const role = currentRole;
+      let redirectPath = '/';
+  
+      switch (role) {
+        case 'mentee':
+          redirectPath = '/components/dashboard/mentee';
+          break;
+        case 'mentor':
+          redirectPath = '/components/dashboard/mentor';
+          break;
+        case 'hod':
+          redirectPath = '/components/dashboard/hod';
+          break;
+        case 'project_coordinator':
+          redirectPath = '/components/dashboard/coordinator';
+          break;
+        default:
+          redirectPath = '/';
+      }
+  
+      return <Navigate to={redirectPath} replace />;
     }
-
-    return <Navigate to={redirectPath} replace />;
   }
 
   // Render the protected component
+  console.log('ProtectedRoute: Access granted');
   return children;
 }
 

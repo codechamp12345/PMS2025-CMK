@@ -6,7 +6,7 @@ import { FaPlus, FaUsers, FaProjectDiagram, FaExclamationTriangle, FaCheckCircle
 import CSVImport from './CSVImport';
 
 const ProjectCoordinatorDashboard = () => {
-  const { signOut, userProfile: authUserProfile, activeRole, updateActiveRole } = useAuth();
+  const { signOut, userProfile: authUserProfile, activeRole, updateActiveRole, updateUserProfile } = useAuth();
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -14,6 +14,7 @@ const ProjectCoordinatorDashboard = () => {
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
   const [showCSVImport, setShowCSVImport] = useState(false);
+  const [showBecomeMenu, setShowBecomeMenu] = useState(false);
 
   // Form state
   const [projectName, setProjectName] = useState('');
@@ -59,8 +60,41 @@ const ProjectCoordinatorDashboard = () => {
         .eq('id', currentUser.id)
         .single();
 
-      if (userError || !userData || userData.role !== 'project_coordinator') {
+      if (userError || !userData) {
         navigate('/login');
+        return;
+      }
+
+      // Check if user has access to coordinator dashboard (either as primary role or in roles array)
+      // Also check if this is their active role
+      const hasCoordinatorAccess = userData.role === 'project_coordinator' || 
+                                 (userData.roles && userData.roles.includes('project_coordinator'));
+      
+      const isActiveRoleCoordinator = (activeRole || userData.role) === 'project_coordinator';
+      
+      if (!hasCoordinatorAccess || !isActiveRoleCoordinator) {
+        // Redirect to appropriate dashboard based on active role
+        const currentActiveRole = activeRole || userData.role;
+        let redirectPath = '/';
+        
+        switch (currentActiveRole) {
+          case 'mentee':
+            redirectPath = '/components/dashboard/mentee';
+            break;
+          case 'mentor':
+            redirectPath = '/components/dashboard/mentor';
+            break;
+          case 'hod':
+            redirectPath = '/components/dashboard/hod';
+            break;
+          case 'project_coordinator':
+            redirectPath = '/components/dashboard/coordinator';
+            break;
+          default:
+            redirectPath = '/';
+        }
+        
+        navigate(redirectPath);
         return;
       }
 
@@ -362,6 +396,92 @@ const ProjectCoordinatorDashboard = () => {
     }
   };
 
+  const switchToRole = (newRole) => {
+    if (newRole && newRole !== activeRole) {
+      updateActiveRole(newRole);
+      const dashboardPaths = {
+        mentee: '/components/dashboard/mentee',
+        mentor: '/components/dashboard/mentor',
+        hod: '/components/dashboard/hod',
+        project_coordinator: '/components/dashboard/coordinator',
+      };
+      const dashboardPath = dashboardPaths[newRole] || dashboardPaths.project_coordinator;
+      console.log(`Switching to role: ${newRole}, navigating to: ${dashboardPath}`);
+      
+      // Force a small delay to ensure state updates before navigation
+      setTimeout(() => {
+        navigate(dashboardPath, { replace: true });
+      }, 100);
+    }
+  };
+
+  const assignRoleToUser = async (newRole) => {
+    try {
+      // Get the current authenticated user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error('No authenticated user found');
+      }
+
+      // Check if user already has this role
+      if (authUserProfile?.roles && authUserProfile.roles.includes(newRole)) {
+        // If user already has the role, just switch to it
+        switchToRole(newRole);
+        return;
+      }
+
+      // Add the new role to the user's roles array
+      const updatedRoles = authUserProfile?.roles 
+        ? [...authUserProfile.roles, newRole] 
+        : [newRole];
+
+      // Update the user's roles in the database
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ 
+          roles: updatedRoles,
+          updated_at: new Date()
+        })
+        .eq('id', user.id);
+
+      if (updateError) {
+        console.error('Error updating user roles:', updateError);
+        throw new Error('Failed to update user roles in database');
+      }
+
+      // Update the local user profile with the new roles
+      const updatedProfile = {
+        ...authUserProfile,
+        roles: updatedRoles
+      };
+      
+      updateUserProfile(updatedProfile);
+
+      // Switch to the new role
+      switchToRole(newRole);
+    } catch (error) {
+      console.error('Error assigning role:', error);
+      setError('Failed to assign role. Please try again.');
+      // Hide error message after 5 seconds
+      setTimeout(() => setError(null), 5000);
+    }
+  };
+
+  const handleBecomeRole = async (role) => {
+    setShowBecomeMenu(false);
+    await assignRoleToUser(role);
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut();
+      navigate('/');
+    } catch (error) {
+      console.error('Logout error:', error);
+      navigate('/');
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -401,46 +521,56 @@ const ProjectCoordinatorDashboard = () => {
                 <FaFileCsv /> {showCSVImport ? 'Hide CSV Import' : 'Import CSV'}
               </button>
               
-              {/* Role Switching Dropdown */}
+              {/* Role Switching Buttons */}
               {authUserProfile?.roles && authUserProfile.roles.length > 1 && (
-                <div>
-                  <select
-                    value={activeRole || (authUserProfile.roles.length > 0 ? authUserProfile.roles[0] : '')}
-                    onChange={(e) => {
-                      const newRole = e.target.value;
-                      if (newRole && newRole !== activeRole) {
-                        updateActiveRole(newRole);
-                        const dashboardPaths = {
-                          mentee: '/components/dashboard/mentee',
-                          mentor: '/components/dashboard/mentor',
-                          hod: '/components/dashboard/hod',
-                          project_coordinator: '/components/dashboard/coordinator',
-                        };
-                        const dashboardPath = dashboardPaths[newRole] || dashboardPaths.project_coordinator;
-                        navigate(dashboardPath, { replace: true });
-                      }
-                    }}
-                    className="bg-white border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    {authUserProfile.roles.map((role) => (
-                      <option key={role} value={role}>
+                <div className="flex space-x-2">
+                  {authUserProfile.roles
+                    .filter(role => role && role !== 'mentee') // Exclude mentee role
+                    .map((role) => (
+                      <button
+                        key={role}
+                        onClick={() => switchToRole(role)}
+                        className={`px-3 py-2 rounded-md text-sm font-medium ${
+                          activeRole === role
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                        }`}
+                      >
                         {role === 'project_coordinator' ? 'Coordinator' : role.charAt(0).toUpperCase() + role.slice(1)}
-                      </option>
+                      </button>
                     ))}
-                  </select>
                 </div>
               )}
               
+              {/* Become button with dropdown */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowBecomeMenu(!showBecomeMenu)}
+                  className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700"
+                >
+                  Become
+                </button>
+                
+                {showBecomeMenu && (
+                  <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-10 border">
+                    <button
+                      onClick={() => handleBecomeRole('hod')}
+                      className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                    >
+                      Become a HOD
+                    </button>
+                    <button
+                      onClick={() => handleBecomeRole('mentor')}
+                      className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                    >
+                      Become a Mentor
+                    </button>
+                  </div>
+                )}
+              </div>
+              
               <button
-                onClick={async () => {
-                  try {
-                    await signOut();
-                    navigate('/');
-                  } catch (error) {
-                    console.error('Logout error:', error);
-                    navigate('/');
-                  }
-                }}
+                onClick={handleLogout}
                 className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
               >
                 Logout

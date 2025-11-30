@@ -3,6 +3,7 @@ import { Route, BrowserRouter as Router, Routes } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import Banner from './components/Banner';
 import Footer from './components/Footer';
+import Features from './components/Features';
 import HODDashboard from './components/HODDashboard';
 import Login from './components/Login';
 import MenteeDashboard from './components/MenteeDashboard';
@@ -27,7 +28,7 @@ function App() {
       <Router>
         <Navbar />
         <Routes>
-          <Route path="/" element={<><Banner /><Footer /></>} />
+          <Route path="/" element={<><Banner /><Features /><Footer /></>} />
           <Route path="/projects" element={<Projects />} />
           <Route path="/projects/:id" element={<ProjectDetails />} />
           <Route path="/projects/:id/review" element={<ReviewPage />} />

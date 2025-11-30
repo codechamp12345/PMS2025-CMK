@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -9,6 +9,7 @@ const Navbar = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [isScrolled, setIsScrolled] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const { user, userProfile, activeRole, isAuthenticated, signOut } = useAuth();
 
   // .2 - Scroll effect for navbar styling
@@ -38,22 +39,25 @@ const Navbar = () => {
   const getDashboardLink = () => {
     if (!isAuthenticated || !userProfile?.role) return null;
     
-    switch (userProfile.role.toLowerCase()) {
+    // Use activeRole if available, otherwise fallback to primary role
+    const currentRole = (activeRole || userProfile.role)?.toLowerCase();
+    
+    switch (currentRole) {
       case 'mentee':
-        return { path: '/mentee-dashboard', label: 'Mentee Dashboard' };
+        return { path: '/components/dashboard/mentee', label: 'Dashboard' };
       case 'mentor':
-        return { path: '/mentor-dashboard', label: 'Mentor Dashboard' };
+        return { path: '/components/dashboard/mentor', label: 'Dashboard' };
       case 'hod':
-        return { path: '/hod-dashboard', label: 'HOD Dashboard' };
+        return { path: '/components/dashboard/hod', label: 'Dashboard' };
       case 'project_coordinator':
-        return { path: '/project-coordinator-dashboard', label: 'Coordinator Dashboard' };
+        return { path: '/components/dashboard/coordinator', label: 'Dashboard' };
       default:
         return null;
     }
   };
 
   // .3.2 - Build final nav links (insert Dashboard after Home when logged-in)
-  const navLinks = (() => {
+  const navLinks = useMemo(() => {
     const links = [...baseLinks];
     const dashboardLink = getDashboardLink();
     if (dashboardLink) {
@@ -61,11 +65,12 @@ const Navbar = () => {
       links.splice(1, 0, { path: dashboardLink.path, label: 'Dashboard' });
     }
     return links;
-  })();
+  }, [isAuthenticated, userProfile, activeRole]);
 
   // .3.3 - Logout handler
   const handleLogout = async () => {
     try {
+      setIsMobileMenuOpen(false);
       await signOut();
       navigate('/');
     } catch (error) {
@@ -121,6 +126,7 @@ const Navbar = () => {
               <button
                 type="button"
                 className="inline-flex sm:hidden items-center justify-center p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500 transition-all duration-300"
+                onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
               >
                 <span className="sr-only">Open main menu</span>
                 <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -181,7 +187,7 @@ const Navbar = () => {
         </div>
 
         {/* .4.2 - Mobile Menu */}
-        <div className="sm:hidden px-4 pb-3 pt-2 border-t border-gray-100 bg-white/95 backdrop-blur-sm">
+        <div className={`sm:hidden px-4 pb-3 pt-2 border-t border-gray-100 bg-white/95 backdrop-blur-sm ${isMobileMenuOpen ? 'block' : 'hidden'}`}>
           {/* Mobile User Info */}
           {isAuthenticated && userProfile && (
             <div className="flex items-center space-x-3 px-4 py-3 mb-2 bg-gray-50 rounded-lg">
@@ -199,12 +205,13 @@ const Navbar = () => {
               </div>
             </div>
           )}
-          
+
           <div className="space-y-1">
             {navLinks.map((link, index) => (
               <Link
                 key={link.path}
                 to={link.path}
+                onClick={() => setIsMobileMenuOpen(false)}
                 className={`block px-4 py-3 rounded-lg text-base font-medium transition-all duration-300 ${
                   location.pathname === link.path
                     ? 'text-indigo-600 bg-indigo-50'
@@ -222,13 +229,19 @@ const Navbar = () => {
             {!isAuthenticated && (
               <div className="pt-2 space-y-2">
                 <button
-                  onClick={() => navigate('/login')}
+                  onClick={() => {
+                    setIsMobileMenuOpen(false);
+                    navigate('/login');
+                  }}
                   className="w-full px-4 py-3 text-left rounded-lg text-base font-medium text-gray-600 hover:text-indigo-600 hover:bg-gray-50 transition-all duration-300"
                 >
                   Login
                 </button>
                 <button
-                  onClick={() => navigate('/signup')}
+                  onClick={() => {
+                    setIsMobileMenuOpen(false);
+                    navigate('/signup');
+                  }}
                   className="w-full px-4 py-3 text-left rounded-lg text-base font-medium bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:from-indigo-700 hover:to-purple-700 transition-all duration-300"
                 >
                   Sign Up

@@ -6,18 +6,19 @@ import { supabase } from '../lib/supabase';
 import { FaUpload, FaEye, FaTrash, FaFileAlt, FaClock, FaCheckCircle, FaExclamationTriangle, FaSpinner, FaDownload } from 'react-icons/fa';
 
 const MenteeDashboard = () => {
-  const navigate = useNavigate();
   const { signOut, userProfile: authUserProfile, activeRole, updateActiveRole } = useAuth();
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
-  const [projects, setProjects] = useState([]);
-  const [selectedProject, setSelectedProject] = useState(null);
-  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [projects, setProjects] = useState([]);
   const [error, setError] = useState(null);
-  const [submissions, setSubmissions] = useState({});
-  const [uploading, setUploading] = useState({});
-  const STORAGE_BUCKET = 'submissions';
+  const [success, setSuccess] = useState(null);
+  const [showAddProjectForm, setShowAddProjectForm] = useState(false);
+  const [selectedProject, setSelectedProject] = useState(null);
+  const [reviews, setReviews] = useState([]);
+  const [loadingReviews, setLoadingReviews] = useState(false);
+
+  const navigate = useNavigate();
 
   // Submission stages configuration (matching MentorDashboard)
   const submissionStages = [
@@ -75,13 +76,47 @@ const MenteeDashboard = () => {
         .eq('id', currentUser.id)
         .single();
 
-      if (userError || !userData || userData.role !== 'mentee') {
+      if (userError || !userData) {
         navigate('/login');
+        return;
+      }
+
+      // Check if user has access to mentee dashboard (either as primary role or in roles array)
+      // Also check if this is their active role
+      const hasMenteeAccess = userData.role === 'mentee' || 
+                             (userData.roles && userData.roles.includes('mentee'));
+      
+      const isActiveRoleMentee = (activeRole || userData.role) === 'mentee';
+      
+      if (!hasMenteeAccess || !isActiveRoleMentee) {
+        // Redirect to appropriate dashboard based on active role
+        const currentActiveRole = activeRole || userData.role;
+        let redirectPath = '/';
+        
+        switch (currentActiveRole) {
+          case 'mentee':
+            redirectPath = '/components/dashboard/mentee';
+            break;
+          case 'mentor':
+            redirectPath = '/components/dashboard/mentor';
+            break;
+          case 'hod':
+            redirectPath = '/components/dashboard/hod';
+            break;
+          case 'project_coordinator':
+            redirectPath = '/components/dashboard/coordinator';
+            break;
+          default:
+            redirectPath = '/';
+        }
+        
+        navigate(redirectPath);
         return;
       }
 
       setUser(currentUser);
       setUserProfile(userData);
+
     } catch (error) {
       console.error('Error checking user:', error);
       navigate('/login');
@@ -444,6 +479,35 @@ const MenteeDashboard = () => {
     pending: 'Pending'
   };
 
+  const switchToRole = (newRole) => {
+    if (newRole && newRole !== activeRole) {
+      updateActiveRole(newRole);
+      const dashboardPaths = {
+        mentee: '/components/dashboard/mentee',
+        mentor: '/components/dashboard/mentor',
+        hod: '/components/dashboard/hod',
+        project_coordinator: '/components/dashboard/coordinator',
+      };
+      const dashboardPath = dashboardPaths[newRole] || dashboardPaths.mentee;
+      console.log(`Switching to role: ${newRole}, navigating to: ${dashboardPath}`);
+      
+      // Force a small delay to ensure state updates before navigation
+      setTimeout(() => {
+        navigate(dashboardPath, { replace: true });
+      }, 100);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut();
+      navigate('/');
+    } catch (error) {
+      console.error('Logout error:', error);
+      navigate('/');
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -467,7 +531,6 @@ const MenteeDashboard = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
       <header className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-6">
@@ -475,65 +538,38 @@ const MenteeDashboard = () => {
               <h1 className="text-3xl font-bold text-gray-900">Mentee Dashboard</h1>
               <p className="text-gray-600">Welcome back, {userProfile.name}</p>
             </div>
-            <div className="flex items-center space-x-4">
-              {projects.length > 1 && (
-                <select
-                  value={selectedProject?.id || ''}
-                  onChange={(e) => {
-                    const project = projects.find(p => String(p.id) === e.target.value);
-                    setSelectedProject(project);
-                  }}
-                  className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Select Project</option>
-                  {projects.map(project => (
-                    <option key={project.id} value={project.id}>
-                      {project.project_name || project.title || project.projectName}
-                    </option>
-                  ))}
-                </select>
-              )}
+            <div className="flex items-center space-x-3">
+              <button
+                onClick={() => setShowAddProjectForm(!showAddProjectForm)}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+              >
+                {showAddProjectForm ? 'Cancel' : 'Add Project'}
+              </button>
               
-              {/* Role Switching Dropdown */}
-              {authUserProfile?.roles && authUserProfile.roles.length > 1 && (
-                <div>
-                  <select
-                    value={activeRole || (authUserProfile.roles.length > 0 ? authUserProfile.roles[0] : '')}
-                    onChange={(e) => {
-                      const newRole = e.target.value;
-                      if (newRole && newRole !== activeRole) {
-                        updateActiveRole(newRole);
-                        const dashboardPaths = {
-                          mentee: '/components/dashboard/mentee',
-                          mentor: '/components/dashboard/mentor',
-                          hod: '/components/dashboard/hod',
-                          project_coordinator: '/components/dashboard/coordinator',
-                        };
-                        const dashboardPath = dashboardPaths[newRole] || dashboardPaths.mentee;
-                        navigate(dashboardPath, { replace: true });
-                      }
-                    }}
-                    className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    {authUserProfile.roles.map((role) => (
-                      <option key={role} value={role}>
+              {/* Role Switching Buttons - Only show for non-mentee roles */}
+              {authUserProfile?.roles && authUserProfile.roles.length > 1 && 
+               authUserProfile.roles.some(role => role && role !== 'mentee') && (
+                <div className="flex space-x-2">
+                  {authUserProfile.roles
+                    .filter(role => role && role !== 'mentee') // Exclude mentee role
+                    .map((role) => (
+                      <button
+                        key={role}
+                        onClick={() => switchToRole(role)}
+                        className={`px-3 py-2 rounded-md text-sm font-medium ${
+                          activeRole === role
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                        }`}
+                      >
                         {role === 'project_coordinator' ? 'Coordinator' : role.charAt(0).toUpperCase() + role.slice(1)}
-                      </option>
+                      </button>
                     ))}
-                  </select>
                 </div>
               )}
               
               <button
-                onClick={async () => {
-                  try {
-                    await signOut();
-                    navigate('/');
-                  } catch (error) {
-                    console.error('Logout error:', error);
-                    navigate('/');
-                  }
-                }}
+                onClick={handleLogout}
                 className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
               >
                 Logout
