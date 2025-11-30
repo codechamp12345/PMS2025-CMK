@@ -160,14 +160,14 @@ const Contact = () => {
                 <span className="text-xl">📧</span>
                 <div>
                   <p className="text-sm text-indigo-100">Email</p>
-                  <p className="font-medium">support@prp.example</p>
+                  <p className="font-medium">git@git-india.edu.in</p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
                 <span className="text-xl">🏢</span>
                 <div>
                   <p className="text-sm text-indigo-100">Head Office</p>
-                  <p className="font-medium">Silicon Valley, CA</p>
+                  <p className="font-medium">GIT, Lavel,MH</p>
                 </div>
               </div>
             </div>
