@@ -1,6 +1,9 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 
 function Features() {
+  const navigate = useNavigate();
+  
   const features = [
     {
       title: "Project Showcase",
@@ -108,10 +111,16 @@ function Features() {
               Join thousands of innovators who are already showcasing their work and receiving expert feedback.
             </p>
             <div className="flex flex-col sm:flex-row justify-center gap-4">
-              <button className="bg-white text-indigo-600 font-semibold py-3 px-8 rounded-lg hover:bg-gray-100 transition-colors duration-300">
+              <button 
+                onClick={() => navigate('/signup')}
+                className="bg-white text-indigo-600 font-semibold py-3 px-8 rounded-lg hover:bg-gray-100 transition-colors duration-300"
+              >
                 Get Started
               </button>
-              <button className="bg-transparent border-2 border-white text-white font-semibold py-3 px-8 rounded-lg hover:bg-white/10 transition-colors duration-300">
+              <button 
+                onClick={() => navigate('/about')}
+                className="bg-transparent border-2 border-white text-white font-semibold py-3 px-8 rounded-lg hover:bg-white/10 transition-colors duration-300"
+              >
                 Learn More
               </button>
             </div>
