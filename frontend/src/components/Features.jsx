@@ -1,8 +1,10 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 
 function Features() {
   const navigate = useNavigate();
+  const { isAuthenticated } = useAuth();
   
   const features = [
     {
@@ -112,7 +114,7 @@ function Features() {
             </p>
             <div className="flex flex-col sm:flex-row justify-center gap-4">
               <button 
-                onClick={() => navigate('/signup')}
+                onClick={() => isAuthenticated ? navigate('/dashboard') : navigate('/signup')}
                 className="bg-white text-indigo-600 font-semibold py-3 px-8 rounded-lg hover:bg-gray-100 transition-colors duration-300"
               >
                 Get Started
